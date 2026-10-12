@@ -1,0 +1,12 @@
+; GAMMA rows for the PiP objective offset table (pip_objective_offsets.ltx in the core).
+; Merged by DLTX. Values from PiP 12b49a679 (TheLostInPlace): x,y lateral and z forward to
+; the front lens, w the objective radius, all in eyepiece radii.
+
+; M84 telescope, 13.2in body over a 1.01cm eyepiece, detection measured 32.70 at the same station
+; w is the r__svp_obj_size fallback median since the objective aperture is unpublished
+[wpn_fmgarand_garand_scope]
+scope_objective_lens_offset = 0,0,33.2,1.0
+
+; Holosun DRS-TH, 3.7in body over a 1.32cm eyepiece, w from the 22.7mm thermal clear aperture
+[wpn_fmgarand_drs]
+scope_objective_lens_offset = 0,0,7.12,0.86

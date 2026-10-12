@@ -1,0 +1,57 @@
+// PIP_COMPAT_PATCH models_reflex_reticle_simple 20261007 3dss502
+/*
+	=====================================================================
+	Addon      : Parallax Reflex Sights
+	Link       : https://www.moddb.com/mods/stalker-anomaly/addons/parallax-reflex-sights
+	Authors    : LVutner, party_50
+	Date       : 06.02.2024
+	Last Edit  : 26.01.2025
+	=====================================================================
+*/
+
+#include "common.h"
+#include "mark_adjust.h"
+
+uniform float4 shader_scope_params;
+uniform float4 s3ds_param_3;
+
+uniform float4 markswitch_color;
+
+#include "reticle_mark_switch.h"
+
+#include "reticle_reflex_vertex.h"
+
+// where the bitmap is sampled before the Mark Switch cell is chosen; a 3dss-scaled MSDF reticle follows it
+float2 reflex_legacy_tc(vf I)
+{
+	float3x3 TBN = float3x3(I.T + 0.0039, I.B + 0.0039, I.N);
+    float3 V_tangent = normalize(float3(dot(-I.P, TBN[0]), dot(-I.P, TBN[1]), dot(-I.P, TBN[2])));
+    // true PiP keeps a reflex in front of a thermal display rigid (no parallax drift)
+    float2 parallax_tc = I.tc0 - V_tangent.xy * 20.0 * (shader_scope_params.w < -1.5 && s3ds_param_3.x >= 1.5 ? 0.0 : 1.0);
+	
+	parallax_tc = (parallax_tc + (4.0 - 1) / 2) / 4.0;
+	return parallax_tc;
+}
+
+float4 reflex_bitmap(vf I, float2 dot_offset)
+{
+	float2 parallax_tc = reflex_legacy_tc(I);
+
+    return s_base.SampleLevel(smp_rtlinear, parallax_tc + dot_offset, 0.0);
+}
+
+#include "reticle_msdf_reflex.h"
+
+ReflexReticleOut main(vf I)
+{
+	const float2 dot_offset = reticle_mark_offset(markswitch_color.a);
+	// an MSDF atlas describes itself; the bitmap path never sees one
+	const ReticleAtlas msdf_atlas = reticle_atlas_open(s_base);
+	const float2 msdf_legacy_tc = reflex_legacy_tc(I) + dot_offset;
+	const float3 msdf = reticle_msdf_reflex(s_base, smp_linear, msdf_atlas, I.P, I.T, I.B, I.N, I.tc0,
+		dot_offset, msdf_legacy_tc);
+	float4 bitmap = 0;
+	if (!msdf_atlas.recognised)
+		bitmap = reflex_bitmap(I, dot_offset);
+	return reticle_msdf_reflex_out(msdf_atlas, bitmap, msdf);
+}

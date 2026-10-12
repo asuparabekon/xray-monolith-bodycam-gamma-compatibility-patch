@@ -1,0 +1,66 @@
+// Real lens enters the ordinary geometry buffers, before native lighting.
+#include "common.h"
+#include "screenspace_mvectors.h"
+#define SCOPE_REFERENCE_GLASS_SAMPLER_DECLARED
+#define scope_reference_glass_sampler smp_base
+#include "scope_reference_glass.h"
+#include "scope_glass_pbr_material.h"
+#include "scope_glass_material_payload.h"
+#include "scope_glass_surface_normal.h"
+float4 scope_reference_physical_glass;
+struct scope_glass_deferred_vertex
+{
+ float4 hpos : SV_Position;
+ float2 uv : TEXCOORD0;
+ float3 world : TEXCOORD1;
+ float3 tangent : TEXCOORD2;
+ float3 bitangent : TEXCOORD3;
+ float3 normal : TEXCOORD4;
+ float4 current_clip : TEXCOORD5;
+ float4 previous_clip : TEXCOORD6;
+};
+f_deffer main(scope_glass_deferred_vertex I)
+{
+ bool admitted=scope_reference_physical_glass.x>0.5;
+ float3 N=normalize(I.normal);
+ if(admitted) N=scope_glass_surface_normal(I.world,N);
+ float3 V=normalize(eye_position-I.world);
+ N*=dot(N,V)<0 ? -1 : 1;
+ float3 T=normalize(I.tangent-N*dot(N,I.tangent));
+ float signB=dot(cross(N,T),I.bitangent)<0 ? -1 : 1;
+ float3 B=normalize(cross(N,T))*signB;
+ float3 albedo=s_base.Sample(smp_base,I.uv).rgb;
+ float gloss=def_gloss;
+ float sourceRoughness=0;
+ float materialID=xmaterial;
+ if(admitted)
+ {
+  ScopeReferenceGlass material=scope_reference_glass(I.uv,T,N,B,V);
+  N=normalize(material.worldNormal);
+  // Preserve the complete source material tint, including its radial
+  // attenuation. This is reflected-light colour, not coverage: the actual
+  // glass mesh still writes depth and the optical pupil remains independent.
+  albedo=LinearTosRGB(max(material.baseColor,0));
+  // Native direct lights still consume their native gloss approximation.
+  sourceRoughness=material.roughness;
+  gloss=scope_glass_pbr_gloss(material.roughness,scope_reference_physical_glass.z);
+  materialID=scope_glass_pbr_material_id;
+ }
+ float3 hemiFaces=N<0 ? (float3)hemi_cube_neg_faces : (float3)hemi_cube_pos_faces;
+ float hemi=saturate(dot(hemiFaces,abs(N)));
+ float3 viewNormal=normalize(mul((float3x3)m_V,N));
+ float3 viewPosition=mul(m_V,float4(I.world,1)).xyz;
+#ifdef USE_R2_STATIC_SUN
+ materialID=L_material.y;
+#endif
+#ifdef EXTEND_F_DEFFER
+ f_deffer o=pack_gbuffer(float4(viewNormal,hemi),float4(viewPosition,materialID),float4(albedo,gloss),0xffffffffu);
+#else
+ f_deffer o=pack_gbuffer(float4(viewNormal,hemi),float4(viewPosition,materialID),float4(albedo,gloss));
+#endif
+ // RGBA16F motion.w carries source roughness in fractional tag2/3 lanes.
+ // Existing physical/focus classifiers remain unchanged; HUD stays 1.
+ // Audited TAA clamps/saturates both markers, treating them like 1.
+ o.velocity=ssfx_mv_calc(I.current_clip,I.previous_clip,1,admitted?scope_glass_encode_roughness(sourceRoughness,scope_reference_physical_glass.y>.5):0);
+ return o;
+}

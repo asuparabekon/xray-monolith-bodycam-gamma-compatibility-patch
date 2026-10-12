@@ -1,0 +1,18 @@
+local function actor_on_update()
+    local owner, weapon_id = hud_adjust_owner.get_owner()
+    if owner ~= "magnifier" then return end
+
+    local active = db.actor:active_item()
+    if active and active:id() == weapon_id then return end
+
+    -- Replacing a weapon in the same slot can omit the previous object from
+    -- actor_on_changed_slot. Its global HUD offsets must not reach the new gun.
+    local editor = ui_debug_wpn_hud and ui_debug_wpn_hud.GUI
+    hud_adjust_owner.release(owner, weapon_id, not (editor and editor:IsShown()))
+end
+
+function on_game_start()
+    if magnifier_switch and hud_adjust_owner then
+        RegisterScriptCallback("actor_on_update", actor_on_update)
+    end
+end

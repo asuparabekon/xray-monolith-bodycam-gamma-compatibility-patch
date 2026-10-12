@@ -1,0 +1,12 @@
+; Exact texture allowlist for opaque models\model materials authored as exterior
+; optic glass. An optional second value overrides the source texture.
+
+[scope_glass_materials]
+generic_pso_ocular = wpn\wpn_scope_pso_1m2-1_lens_diff
+
+; 3DSS 5.x transparent sights swap every [target_texture_scopes] texture to this shader while
+; aiming, the generic exterior lens glass above included. Glass stays glass under the swap, so
+; the PiP lens keeps its coated reflection and dirt over the exit-pupil vignette. Applies only
+; under true PiP (r__svpscope 2); stock 3DSS keeps its see-through glass.
+[scope_glass_source_shaders]
+models\transparent_hud
