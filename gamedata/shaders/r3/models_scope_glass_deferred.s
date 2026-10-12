@@ -1,0 +1,13 @@
+function normal(shader, t_base, t_second, t_detail)
+ shader:begin("models_scope_glass_deferred", "models_scope_glass_deferred")
+  :fog(false)
+  :zb(true, true)
+  :blend(false, blend.one, blend.zero)
+  :sorting(1, false)
+ shader:dx10stencil(true, cmp_func.always, 255, 127, stencil_op.keep, stencil_op.replace, stencil_op.keep)
+ shader:dx10stencil_ref(1)
+ shader:dx10texture("s_base", t_base)
+ shader:dx10texture("scope_reference_glass_spots", "$user$svp_reference_glass_spots")
+ shader:dx10texture("scope_reference_glass_dirt", "$user$svp_reference_glass_surface")
+ shader:dx10sampler("smp_base")
+end

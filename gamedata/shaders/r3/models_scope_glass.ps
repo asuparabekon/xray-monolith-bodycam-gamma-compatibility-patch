@@ -1,0 +1,45 @@
+#include "common.h"
+#include "scope_reference_physical_glass.h"
+float4 scope_reference_physical_glass;
+
+struct scope_glass_vertex
+{
+	float4 hpos : SV_Position;
+	float2 tc0 : TEXCOORD0;
+	float3 position_world : TEXCOORD1;
+	float3 tangent_world : TEXCOORD2;
+	float3 binormal_world : TEXCOORD3;
+	float3 normal_world : TEXCOORD4;
+};
+
+float4 main(scope_glass_vertex input) : SV_Target
+{
+	float3 view_direction = normalize(eye_position - input.position_world);
+	float3 surface_normal = normalize(input.normal_world);
+	surface_normal *= dot(surface_normal, view_direction) < 0.0 ? -1.0 : 1.0;
+	float3 right = normalize(input.tangent_world);
+	float3 up = normalize(input.binormal_world);
+    // Existing private lens diagnostics: actual mesh coverage, basis and environment.
+    int diagnostic=(int)round(svp_lens_control.y);
+    // Native deferred material diagnostics 6-9 must remain visible after the
+    // late replay. Preserve the old forward 7-9 views for legacy glass only.
+    if(diagnostic==6 || (scope_reference_physical_glass.x>.5 && diagnostic>=7 && diagnostic<=9))
+        return float4(0,0,0,0);
+    if(diagnostic==9) return float4(0,1,0,1);
+    if(diagnostic==7) return float4(surface_normal*.5+.5,1);
+    if(diagnostic==8) return float4(svp_optic_environment(reflect(-view_direction,surface_normal),0),1);
+    if (scope_reference_physical_glass.x > 0.5)
+        return scope_reference_physical_material(input.tc0, input.position_world,
+            right, up, surface_normal, view_direction);
+	float2 lens_position = (input.tc0 - 0.5) * 2.0;
+	float2 screen_position = input.hpos.xy * screen_res.zw;
+	float4 authored = s_base.Sample(smp_rtlinear, input.tc0);
+	SvpLensProfile profile = svp_authored_lens_profile();
+	SvpLensChannels channels = svp_evaluate_lens(lens_position, screen_position, input.position_world,
+		right, up, surface_normal, view_direction, profile, false, 1.0, 1.0);
+	float4 result = svp_composite_lens(channels);
+	result.a *= lerp(0.82, 1.0, saturate(authored.a));
+	result.a *= svp_optic_objective_aperture(lens_position);
+	result.rgb *= result.a; // Same native fallback appearance under premultiplied blending.
+	return result;
+}

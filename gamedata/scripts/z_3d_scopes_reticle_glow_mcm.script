@@ -1,0 +1,86 @@
+-- MSDF reticle settings as a tab of the 3D Shader Scopes MCM menu (GAMMA patch). The values are the engine's
+-- r__reticle_msdf_* console settings: every option reads and writes the console, so the menu and the console
+-- always agree. An engine without those settings gets no tab.
+
+-- the engine defaults of the lobe vectors; the menu scales them as a whole
+local GLOW_SIZE = { 3, 12, 40 }
+local GLOW_WEIGHT = { 1, 0.35, 0.15 }
+
+local function console_numbers(name)
+	local values = {}
+	for token in string.gmatch(get_console():get_string(name) or "", "[^,%s]+") do
+		local value = tonumber(token)
+		if not value or value ~= value or value == math.huge or value == -math.huge then
+			return {}
+		end
+		values[#values + 1] = value
+	end
+	return values
+end
+
+local function read_number(name)
+	return console_numbers(name)[1]
+end
+
+local function write_number(name, value)
+	exec_console_cmd(string.format("%s %s", name, value))
+end
+
+local function read_bool(name)
+	return read_number(name) == 1
+end
+
+local function write_bool(name, value)
+	exec_console_cmd(name .. (value and " 1" or " 0"))
+end
+
+-- a lobe vector as one scale on its defaults (the first lobe decides)
+local function read_scale(name, defaults)
+	local first = console_numbers(name)[1]
+	return first and first / defaults[1] or 1
+end
+
+local function write_scale(name, defaults, value)
+	exec_console_cmd(string.format("%s %s,%s,%s", name, defaults[1] * value, defaults[2] * value, defaults[3] * value))
+end
+
+local function track(id, name, min, max, step, def)
+	return { id = id, type = "track", val = 2, min = min, max = max, step = step, def = def,
+		curr = { read_number, name }, functor = { write_number, name } }
+end
+
+local function scale(id, name, defaults, min, max)
+	return { id = id, type = "track", val = 2, min = min, max = max, step = 0.05, def = 1,
+		curr = { read_scale, name, defaults }, functor = { write_scale, name, defaults } }
+end
+
+function on_mcm_load(options)
+	if not read_number("r__reticle_msdf_brightness") then
+		return
+	end
+	local gr = {
+		{ id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_3d_scopes_reticle_glow_title", size = { 512, 50 }, spacing = 20 },
+		{ id = "msdf", type = "check", val = 1, def = true, curr = { read_bool, "r__reticle_msdf" }, functor = { write_bool, "r__reticle_msdf" } },
+		track("brightness", "r__reticle_msdf_brightness", 0, 4, 0.05, 1),
+		{ id = "divider_glow", type = "line" },
+		scale("glow_size", "r__reticle_msdf_glow_size", GLOW_SIZE, 0.25, 1.5),
+		scale("glow_strength", "r__reticle_msdf_glow_weight", GLOW_WEIGHT, 0, 4),
+		track("glow_exposure", "r__reticle_msdf_glow_exposure", 1, 4, 0.1, 1),
+		track("glow_lowlum", "r__reticle_msdf_glow_lowlum", 0.01, 1, 0.01, 0.2),
+		track("glow_halo", "r__reticle_msdf_glow_halo", 0.1, 1, 0.05, 0.55),
+		track("glow_shoulder", "r__reticle_msdf_glow_shoulder", 0, 4, 0.1, 1),
+		track("glow_tint", "r__reticle_msdf_glow_tint", 0, 1, 0.05, 0.5),
+		{ id = "divider_holo", type = "line" },
+		track("holo_level", "r__reticle_msdf_holo_level", 0, 2, 0.05, 1),
+		track("speckle", "r__reticle_msdf_speckle", 0, 2, 0.05, 1),
+		track("line_weight", "r__reticle_msdf_line_weight", 0, 1, 0.05, 0),
+	}
+	-- a tab of the 3D Shader Scopes menu when it is loaded, else a menu of its own with the same option paths
+	for _, menu in ipairs(options or {}) do
+		if menu.id == "3d_scopes" and menu.gr then
+			table.insert(menu.gr, { id = "reticle_glow", text = "ui_mcm_menu_3d_scopes_reticle_glow", sh = true, gr = gr })
+			return
+		end
+	end
+	return { id = "3d_scopes_reticle_glow", sh = true, gr = gr }
+end

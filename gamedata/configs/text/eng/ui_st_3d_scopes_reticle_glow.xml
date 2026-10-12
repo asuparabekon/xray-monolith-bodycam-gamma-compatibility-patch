@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+	<string id="ui_mcm_menu_3d_scopes_reticle_glow">
+		<text>Reticle Glow</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_title">
+		<text>Illuminated reticles (MSDF)</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_msdf">
+		<text>Sharp reticles</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_msdf_desc">
+		<text>Draws MSDF reticles with their distance field and glow. Off draws them from coverage alone with the old colouring, for comparison.</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_brightness">
+		<text>Brightness</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_brightness_desc">
+		<text>Scale on each reticle's authored brightness.</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_size">
+		<text>Glow size</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_size_desc">
+		<text>Scale on the size of the glow around lit reticles, on top of each reticle's own glow size.</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_strength">
+		<text>Glow strength</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_strength_desc">
+		<text>Scale on how strong the glow is against the lit core. 0 turns the glow off.</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_exposure">
+		<text>Night bloom</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_exposure_desc">
+		<text>How much the glow follows the eye's adaptation: 1 scales it like the core, higher keeps it small by day and large at night.</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_lowlum">
+		<text>Night adaptation</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_lowlum_desc">
+		<text>The darkest scene the glow's exposure still adapts to. Lower lets a reticle bloom more at night than the game's own tone map allows the scene.</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_halo">
+		<text>Glow ceiling</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_halo_desc">
+		<text>The brightest the glow gets on screen, below white, so the reticle's lines still read inside a strong glow.</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_shoulder">
+		<text>White-hot core</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_shoulder_desc">
+		<text>How fast light brighter than the screen turns the core white. 0 keeps the core coloured.</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_tint">
+		<text>Glow tint</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_glow_tint_desc">
+		<text>How much the glow covers the image behind it instead of adding to it. Higher keeps it coloured over a bright sky.</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_holo_level">
+		<text>Holographic brightness</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_holo_level_desc">
+		<text>Scale on the authored brightness of holographic sights.</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_speckle">
+		<text>Holographic speckle</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_speckle_desc">
+		<text>Scale on the authored laser speckle and noise of holographic sights.</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_line_weight">
+		<text>Thin line weight</text>
+	</string>
+	<string id="ui_mcm_3d_scopes_reticle_glow_line_weight_desc">
+		<text>0 draws lines thinner than a pixel with their true darkness, 1 draws them bold.</text>
+	</string>
+</string_table>
