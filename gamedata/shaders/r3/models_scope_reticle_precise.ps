@@ -22,7 +22,7 @@
 
 uniform float4 shader_scope_params;
 #include "svp_hooks_shadow.h"
-#include "reticle_msdf.h"
+#include "reticle_atlas.h"
 Texture2D s_reticle_image_emission; // engine: the reticle glow targets as the frame was when the lenses copied it
 Texture2D s_reticle_image_glow;
 
@@ -444,6 +444,13 @@ float2 fisheye(float2 tc, float2 tangent)
 	return fished - tc;
 }
 
+// The 1P59 dial's angle (reticle_dial_angle). Non-linear zoom correction: zoom_part should normally range from
+// 0.0 (3x) to 1.0 (10x).
+float scope_dial_angle(float zoom_part)
+{
+	return reticle_dial_angle(pow(saturate(zoom_part), 1.069));
+}
+
 float current_lum()
 {
 	float lum_min = 0.85;
@@ -589,9 +596,9 @@ float4 scope_reticle_color(vf I, out float4 emission, out float4 glow)
 	
 	int IMAGE_TYPE = s3ds_param_3.x;
 	int RETICLE_TYPE = s3ds_param_3.y;
-	// An MSDF reticle describes itself: the profile's type still shapes the lens (and the legacy reticle coordinate
+	// A reticle atlas describes itself: the profile's type still shapes the lens (and the legacy reticle coordinate
 	// below), its bitmap decoding never applies (MARK_TYPE)
-	const ReticleAtlas msdf_atlas = reticle_atlas_open(s_base);
+	const ReticleAtlas atlas = reticle_atlas_open(s_base);
 	float DIRT_INTENSITY = decoded_dirt_intensity();
 	float CHROMA_POWER = s3ds_param_3.w;
 	
@@ -658,9 +665,10 @@ float2 reticle_tc = project(I.tc0, V_tangent.xy * pip_k, RETICLE_PROJECT, RETICL
 		reticle_lens_tc -= correction / max(RETICLE_SIZE, 0.001);
 		reticle_tc -= correction / max(reticle_scale, 0.001);
 	}
-	// where the bitmap would be sampled: an MSDF atlas in 3dss scale mode follows it
-	const float2 msdf_legacy_tc = reticle_tc;
-	const int MARK_TYPE = msdf_atlas.recognised ? RT_NONE : RETICLE_TYPE;
+	// where the bitmap would be sampled: an atlas in 3dss scale mode follows it
+	const float2 reticle_legacy_tc = reticle_tc;
+	const float2 reticle_legacy_lens_tc = reticle_lens_tc;
+	const int MARK_TYPE = atlas.recognised ? RT_NONE : RETICLE_TYPE;
     float4 mark_texture = float4(0, 0, 0, 0);
 	if (reticle_tc.x >= 0 && reticle_tc.x <= 1 && reticle_tc.y >= 0 && reticle_tc.y <= 1)
 	{
@@ -668,7 +676,7 @@ float2 reticle_tc = project(I.tc0, V_tangent.xy * pip_k, RETICLE_PROJECT, RETICL
 			reticle_tc = mark_adjust(reticle_tc);
 		mark_texture = s_base.Sample(smp_base, clamp(reticle_tc, 0, 1));
 	}
-	if (msdf_atlas.recognised)
+	if (atlas.recognised)
 		mark_texture = float4(0, 0, 0, 0);
 
 if (MARK_TYPE == RT_DFP)
@@ -731,12 +739,7 @@ if (MARK_TYPE == RT_DFP_ALT)
     mark_texture = mark_texture.r;
     float finder = s_base.Sample(smp_base, clamp(reticle_lens_tc, 0, 1)).g;
 
-    float shift_3x = 0.053;
-
-    // Non-linear zoom correction
-    // zoom_part should normally range from 0.0 (3??) to 1.0 (10??)
-    float zoom_corrected = pow(saturate(zoom_part), 1.069); // tweak exponent 1.0???1.1
-    float angle = -PI * (zoom_corrected + shift_3x) / (1 + shift_3x);
+    float angle = scope_dial_angle(zoom_part);
 
     float2 tc = reticle_lens_tc - 0.5;
     tc = float2(tc.x * cos(angle) - tc.y * sin(angle),
@@ -875,29 +878,24 @@ if (MARK_TYPE == RT_DFP_ALT)
 	V_tangent.x = V_tangent.x / screen_res.x * screen_res.y;
 	scope_tc = scope_tc + V_tangent.xy * shift;
 
-	// MSDF reticle angle from the frame pixel this lens pixel shows, so it stays registered with the world.
+	// Atlas reticle angle from the frame pixel this lens pixel shows, so it stays registered with the world.
 	// The bore is the lens centre seen at zero parallax; the main camera maps frame UV to view tangents.
-	const float2 msdf_tc_dx = ddx(I.tc0);
-	const float2 msdf_tc_dy = ddy(I.tc0);
-	const float msdf_det = msdf_tc_dx.x * msdf_tc_dy.y - msdf_tc_dy.x * msdf_tc_dx.y;
-	const float2 msdf_to_centre = 0.5 - I.tc0;
-	const float2 msdf_centre_px = float2(msdf_tc_dy.y * msdf_to_centre.x - msdf_tc_dy.x * msdf_to_centre.y,
-		msdf_tc_dx.x * msdf_to_centre.y - msdf_tc_dx.y * msdf_to_centre.x) / (abs(msdf_det) > 1e-12 ? msdf_det : 1e-12);
-	const float2 msdf_bore_tc = (screen_tc + msdf_centre_px * screen_res.zw - 0.5) / zoom + 0.5;
-	const float2 msdf_tan_half = float2(ogse_c_screen.z / max(ogse_c_screen.y, 0.01), ogse_c_screen.z);
-	float2 msdf_angle = reticle_msdf_angle(msdf_atlas, reticle_msdf_frame_tangent(scope_tc, msdf_tan_half),
-		reticle_msdf_frame_tangent(msdf_bore_tc, msdf_tan_half));
-	if (msdf_atlas.flags & RMSDF_FLAG_SFP)
-		msdf_angle *= max(shader_scope_params.x, 1.0) / msdf_atlas.calibrated_magnification;
-	if (reticle_msdf_legacy_scale(msdf_atlas))
-		msdf_angle = reticle_msdf_legacy_angle(msdf_atlas, msdf_legacy_tc);
-	const float2 msdf_jx = ddx(msdf_angle);
-	const float2 msdf_jy = ddy(msdf_angle);
-	const float4 msdf_illumination = reticle_msdf_lighting(s_base, msdf_atlas, markswitch_color, markswitch_current.x);
-	ReticleMarks msdf_marks = (ReticleMarks)0;
-	if (msdf_atlas.valid)
-		msdf_marks = reticle_msdf_marks(s_base, smp_linear, msdf_atlas, msdf_angle, msdf_jx, msdf_jy,
-			markswitch_current.x);
+	const float2 reticle_tc_dx = ddx(I.tc0);
+	const float2 reticle_tc_dy = ddy(I.tc0);
+	const float reticle_det = reticle_tc_dx.x * reticle_tc_dy.y - reticle_tc_dy.x * reticle_tc_dx.y;
+	const float2 reticle_to_centre = 0.5 - I.tc0;
+	const float2 reticle_centre_px = float2(reticle_tc_dy.y * reticle_to_centre.x - reticle_tc_dy.x * reticle_to_centre.y,
+		reticle_tc_dx.x * reticle_to_centre.y - reticle_tc_dx.y * reticle_to_centre.x) / (abs(reticle_det) > 1e-12 ? reticle_det : 1e-12);
+	const float2 reticle_bore_tc = (screen_tc + reticle_centre_px * screen_res.zw - 0.5) / zoom + 0.5;
+	const float2 reticle_tan_half = float2(ogse_c_screen.z / max(ogse_c_screen.y, 0.01), ogse_c_screen.z);
+	const float2 reticle_angle = reticle_atlas_angle(atlas, reticle_atlas_frame_tangent(scope_tc, reticle_tan_half),
+		reticle_atlas_frame_tangent(reticle_bore_tc, reticle_tan_half));
+	const ReticleView reticle_view = reticle_atlas_view_dial(reticle_atlas_view(atlas, reticle_angle, shader_scope_params.x,
+		reticle_legacy_tc, reticle_legacy_lens_tc), scope_dial_angle(zoom_part));
+	const float4 reticle_illumination = reticle_atlas_lighting(atlas, markswitch_color, markswitch_current.x);
+	ReticleMarks reticle_marks = (ReticleMarks)0;
+	if (atlas.valid)
+		reticle_marks = reticle_atlas_marks(s_base, atlas, reticle_view, markswitch_current.x);
 
 	if (RETICLE_TYPE == RT_SPECTER) {
 		float smooth_zoom_part = smoothstep(0, 1, zoom_part);
@@ -1051,14 +1049,14 @@ if (MARK_TYPE == RT_DFP_ALT)
 	// Result
 	
 	float3 final_scope = lerp(back, final_scope_1.rgb, final_scope_1.a);
-	if (msdf_atlas.recognised)
+	if (atlas.recognised)
 	{
 		// one fixed slot under the tube shadow for either focal plane; ink is black, paint reflects the scene
-		const float msdf_reach = true_pip ? eyebox_transmission : 1.0;
-		const float3 msdf_paint = reticle_msdf_paint(msdf_marks, dot(back, float3(0.299, 0.587, 0.114)));
-		final_scope = lerp(final_scope, msdf_paint, msdf_marks.paint * msdf_reach);
-		final_scope *= 1.0 - msdf_marks.ink * msdf_reach;
-		if (!msdf_atlas.valid && reticle_msdf_control.y > 0.5)
+		const float reticle_reach = true_pip ? eyebox_transmission : 1.0;
+		const float3 reticle_paint = reticle_atlas_paint(reticle_marks, dot(back, float3(0.299, 0.587, 0.114)));
+		final_scope = lerp(final_scope, reticle_paint, reticle_marks.paint * reticle_reach);
+		final_scope *= 1.0 - reticle_marks.ink * reticle_reach;
+		if (!atlas.valid && reticle_atlas_control.y > 0.5)
 			final_scope = lerp(final_scope, float3(1, 0, 1), 0.25);
 	}
 	if (MARK_TYPE == RT_ADDITIVE || MARK_TYPE == RT_MARK_MAGNIFIER)
@@ -1066,41 +1064,41 @@ if (MARK_TYPE == RT_DFP_ALT)
 		final_scope = saturate(final_scope + mark_texture.rgb * mark_texture.a);
 	}
 	final_scope = lerp(final_scope, final_scope_2.rgb, final_scope_2.a);
-	float3 msdf_emission = 0;
-	if (msdf_atlas.valid)
+	float3 reticle_emission = 0;
+	if (atlas.valid)
 	{
-		msdf_emission = reticle_msdf_emission(msdf_atlas, msdf_marks, msdf_illumination)
+		reticle_emission = reticle_atlas_emission(atlas, reticle_marks, reticle_illumination)
 			* (1.0 - max(shadow_texture.a, mark_shadow.a))
 			* (true_pip ? eyebox_transmission : 1.0)
 			* (SETTING(SETTINGS, ST_SEE_THROUGH) ? 1.0 : m_hud_params.x);
 		// a thermal display's reticle dims with its battery and goes out when it is flat, like the display
-		const float msdf_battery = thermal_battery_charge();
-		if ((IMAGE_TYPE == IT_THERMAL || IMAGE_TYPE == IT_THERMAL_COLOR) && markswitch_current.x < 2 && msdf_battery > -0.5)
-			msdf_emission *= msdf_battery <= THERMAL_CRITICAL_CHARGE ? 0.0 : thermal_power_signal(msdf_battery);
+		const float reticle_battery = thermal_battery_charge();
+		if ((IMAGE_TYPE == IT_THERMAL || IMAGE_TYPE == IT_THERMAL_COLOR) && markswitch_current.x < 2 && reticle_battery > -0.5)
+			reticle_emission *= reticle_battery <= THERMAL_CRITICAL_CHARGE ? 0.0 : thermal_power_signal(reticle_battery);
 	}
-	if (reticle_msdf_emission_external())
+	if (reticle_atlas_emission_external())
 	{
 		// the lens covers the glow behind it with its own: its reticle, and the reflex reticles its image shows
 		// (a magnifier over a red dot), taken from the copies the engine made with the frame
-		float3 msdf_image = 0, msdf_image_glow = 0;
+		float3 reticle_image = 0, reticle_image_glow = 0;
 		const bool glass_image = !((IMAGE_TYPE == IT_THERMAL || IMAGE_TYPE == IT_THERMAL_COLOR) && markswitch_current.x < 2)
 			&& !(IMAGE_TYPE == IT_NV && markswitch_current.x == 0);
-		if (glass_image && reticle_msdf_reflex_glow.y > 0.5)
+		if (glass_image && reticle_atlas_reflex_glow.y > 0.5)
 		{
 			const float reach = true_pip ? eyebox_transmission : 1.0;
 			float cover = (1.0 - final_scope_1.a) * (1.0 - final_scope_2.a) * (1.0 - final_scope_3.a) * reach;
-			if (msdf_atlas.recognised)
-				cover *= (1.0 - msdf_marks.paint * reach) * (1.0 - msdf_marks.ink * reach);
-			msdf_image = s_reticle_image_emission.SampleLevel(smp_linear, scope_tc, 0).rgb * LENS_COLOR * cover;
-			msdf_image_glow = s_reticle_image_glow.SampleLevel(smp_linear, scope_tc, 0).rgb * LENS_COLOR * cover;
+			if (atlas.recognised)
+				cover *= (1.0 - reticle_marks.paint * reach) * (1.0 - reticle_marks.ink * reach);
+			reticle_image = s_reticle_image_emission.SampleLevel(smp_linear, scope_tc, 0).rgb * LENS_COLOR * cover;
+			reticle_image_glow = s_reticle_image_glow.SampleLevel(smp_linear, scope_tc, 0).rgb * LENS_COLOR * cover;
 		}
 		// the lens dirt over the reticle dims its light and scatters part of it into the glow
-		emission = float4(msdf_emission * (1.0 - final_scope_3.a) + msdf_image, 1.0);
-		glow = float4(reticle_msdf_glow_out(msdf_atlas, msdf_emission * (1.0 - 0.5 * final_scope_3.a)).rgb
-			+ msdf_image_glow, 1.0);
+		emission = float4(reticle_emission * (1.0 - final_scope_3.a) + reticle_image, 1.0);
+		glow = float4(reticle_atlas_glow_out(atlas, reticle_emission * (1.0 - 0.5 * final_scope_3.a)).rgb
+			+ reticle_image_glow, 1.0);
 	}
 	else
-		final_scope += reticle_msdf_inline(msdf_emission);
+		final_scope += reticle_atlas_inline(reticle_emission);
 	final_scope += specular;
 	final_scope = lerp(final_scope, final_scope_3.rgb, final_scope_3.a);
 
@@ -1125,8 +1123,8 @@ if (MARK_TYPE == RT_DFP_ALT)
 	return float4(final_scope, 1);
 }
 
-// SV_Target2 and 3 take the MSDF reticle glow core and glow source when the engine binds its glow targets there
-// (reticle_msdf.h); without them both stay 0, which leaves whatever is bound there untouched under the lens blend
+// SV_Target2 and 3 take the atlas reticle glow core and glow source when the engine binds its glow targets there
+// (reticle_atlas.h); without them both stay 0, which leaves whatever is bound there untouched under the lens blend
 struct ScopeReticleOut
 {
 	float4 color : SV_Target0;

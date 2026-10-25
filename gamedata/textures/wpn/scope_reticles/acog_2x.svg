@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" viewBox="-157.0133 -157.0133 314.0267 314.0267">
+  <title>ACOG 2x (Trijicon TA47 2x20), 1 unit = 1 MOA: the 9.2 MOA triangle and the post, lit by its fibre and tritium. Traced from the GIMP 3DSS bitmap</title>
+  <g inkscape:groupmode="layer" inkscape:label="illum">
+    <path d="M 0.0000 0.0000 L 4.9067 9.2000 L -4.9067 9.2000 Z" fill="#ff0000" />
+    <path d="M -0.9200 17.1733 L 0.9200 17.1733 L 0.9200 26.3733 L -0.9200 26.3733 Z" fill="#ff0000" />
+  </g>
+  <g inkscape:groupmode="layer" inkscape:label="ink">
+    <path d="M -0.9200 26.3733 L 0.9200 26.3733 L 0.9200 31.5867 L -0.9200 31.5867 Z" fill="#000000" />
+  </g>
+</svg>

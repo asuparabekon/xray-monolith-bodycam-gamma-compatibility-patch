@@ -1,12 +1,2 @@
 dist/
-
-# reticle tools: msdfgen download, private Python environment and per-SVG outputs
-/tools/reticle_msdf/.msdfgen/
-/tools/reticle_msdf/.venv/
-/tools/reticle_msdf/.preview/
-/tools/reticle_msdf/build/
-/tools/reticle_msdf/dist/
-/tools/reticle_msdf/__pycache__/
-/tools/reticle_msdf/reticles/*_reticle/
-
 /release/

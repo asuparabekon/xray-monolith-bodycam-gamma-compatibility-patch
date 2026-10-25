@@ -1,6 +1,7 @@
--- MSDF reticle settings as a tab of the 3D Shader Scopes MCM menu (GAMMA patch). The values are the engine's
--- r__reticle_msdf_* console settings: every option reads and writes the console, so the menu and the console
--- always agree. An engine without those settings gets no tab.
+-- Reticle atlas settings as a tab of the 3D Shader Scopes MCM menu (GAMMA patch). The values are the engine's
+-- r__reticle_msdf_* console settings (named after the retired MSDF atlases; players' saved values keep the names):
+-- every option reads and writes the console, so the menu and the console always agree. An engine without those
+-- settings gets no tab.
 
 -- the engine defaults of the lobe vectors; the menu scales them as a whole
 local GLOW_SIZE = { 3, 12, 40 }
@@ -24,14 +25,6 @@ end
 
 local function write_number(name, value)
 	exec_console_cmd(string.format("%s %s", name, value))
-end
-
-local function read_bool(name)
-	return read_number(name) == 1
-end
-
-local function write_bool(name, value)
-	exec_console_cmd(name .. (value and " 1" or " 0"))
 end
 
 -- a lobe vector as one scale on its defaults (the first lobe decides)
@@ -60,7 +53,6 @@ function on_mcm_load(options)
 	end
 	local gr = {
 		{ id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_3d_scopes_reticle_glow_title", size = { 512, 50 }, spacing = 20 },
-		{ id = "msdf", type = "check", val = 1, def = true, curr = { read_bool, "r__reticle_msdf" }, functor = { write_bool, "r__reticle_msdf" } },
 		track("brightness", "r__reticle_msdf_brightness", 0, 4, 0.05, 1),
 		{ id = "divider_glow", type = "line" },
 		scale("glow_size", "r__reticle_msdf_glow_size", GLOW_SIZE, 0.25, 1.5),

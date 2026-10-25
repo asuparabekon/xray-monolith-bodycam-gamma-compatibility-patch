@@ -4,13 +4,7 @@
 		<text>Reticle Glow</text>
 	</string>
 	<string id="ui_mcm_3d_scopes_reticle_glow_title">
-		<text>Illuminated reticles (MSDF)</text>
-	</string>
-	<string id="ui_mcm_3d_scopes_reticle_glow_msdf">
-		<text>Sharp reticles</text>
-	</string>
-	<string id="ui_mcm_3d_scopes_reticle_glow_msdf_desc">
-		<text>Draws MSDF reticles with their distance field and glow. Off draws them from coverage alone with the old colouring, for comparison.</text>
+		<text>Illuminated reticles</text>
 	</string>
 	<string id="ui_mcm_3d_scopes_reticle_glow_brightness">
 		<text>Brightness</text>
@@ -67,10 +61,10 @@
 		<text>Scale on the authored brightness of holographic sights.</text>
 	</string>
 	<string id="ui_mcm_3d_scopes_reticle_glow_speckle">
-		<text>Holographic speckle</text>
+		<text>Holographic grain</text>
 	</string>
 	<string id="ui_mcm_3d_scopes_reticle_glow_speckle_desc">
-		<text>Scale on the authored laser speckle and noise of holographic sights.</text>
+		<text>Scale on the authored grain of holographic sights (the laser speckle of their mask).</text>
 	</string>
 	<string id="ui_mcm_3d_scopes_reticle_glow_line_weight">
 		<text>Thin line weight</text>

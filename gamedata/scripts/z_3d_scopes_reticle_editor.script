@@ -1,0 +1,1051 @@
+-- Reticle editor (GAMMA patch): an ImGui window (Mods > Reticle Editor) that edits the .reticle.ini of the vector
+-- reticle in the held sight and shows every change on it live: the engine rebuilds the reticle from its .svg with the
+-- edited settings (console r__reticle_edit, r4_reticle_vector.cpp in the Bodycam engine). Each sight's own reticle
+-- lives in appdata\reticles\<texture>.svg and .reticle.ini, which the engine builds ahead of the shipped files: Save
+-- writes the settings there (with a copy of the shipped drawing and grain image), Load SVG puts any drawing there,
+-- so a bitmap sight can be given a vector reticle too, and Reset to original deletes them. Nothing in gamedata or a
+-- mod is written. The drawing itself is edited in Inkscape. "Hold aim" keeps the sight raised while the window is on
+-- screen. An engine without those commands gets no window.
+
+local SESSION_FILE = "reticle_editor_session.reticle.ini" -- in $app_data_root$: the settings being previewed
+local APPLY_DELAY_MS = 150
+local SHOWN_MS = 500 -- the window counts as on screen this long after it was last drawn
+local HOLD_RETRY_MS = 600
+local USER_FOLDER = "reticles\\" -- in $app_data_root$: the user's own reticles, by texture path
+-- settings for a drawing loaded into a sight that had none: MOA, one SVG unit a MOA
+local DEFAULT_SETTINGS = "[reticle]\r\nunits = moa\r\nscale = 1\r\n\r\n[illumination]\r\nluminance = 8\r\n"
+
+local show_window = false
+local state = {
+	weapon_id = nil,
+	texture = nil, -- the edited reticle texture, e.g. wpn\scope_reticles\shorty\dr_1f\shorty
+	source = nil, -- "yours" (appdata\reticles) or "original" (gamedata); nil when it has no drawing
+	problem = nil, -- why it cannot be edited
+	doc = nil, -- the .reticle.ini being edited, as lines
+	original = nil, -- its text as loaded or last saved
+	auto_apply = true,
+	apply_at = nil,
+	hold_aim = false,
+	holding = false,
+	hold_pressed_at = 0,
+	inspect = false, -- the HUD drawn closer (the engine's r__reticle_inspect) while the window is on screen
+	inspect_zoom = 3,
+	inspect_sent = 1, -- the zoom last given to the engine
+	drawn_at = -1e9, -- when the window was last drawn: the overlay hides it without closing it
+	want_grain = false, -- Grain ticked, waiting for an image
+	live_edit = false, -- the texture on screen was rebuilt from the settings being edited
+	was_open = false,
+	stashed = {}, -- lines of sections switched off with another one ([mask] with [holo]), for when it comes back
+	held = nil, -- the held weapon's reticle list, kept until the weapon or its 3DSS profile changes
+	switched_off = {}, -- values of optional settings switched off, for when they come back on
+}
+
+-- every setting the engine reads (reticle_vector_build.cpp); optional ones are absent until switched on
+local NUMBERS = {
+	reticle = {
+		{ key = "scale", label = "Scale", min = 0.0001, max = 100000, drag = true,
+			tip = "SVG units per reticle unit" },
+		{ key = "legacy_span", label = "Legacy span", min = 1, max = 8191, drag = true, optional = true,
+			tip = "reticle units across the 3DSS bitmap it replaces: the reticle shows at that bitmap's size; off = true angles" },
+		{ key = "calibrated_magnification", label = "Calibrated magnification", min = 0.01, max = 655, optional = true,
+			default = 1, tip = "the magnification at which the sfp parts have their true size (true angles only)" },
+	},
+	battery = {
+		{ key = "luminance", label = "Luminance", min = 0.5, max = 64, default = 8,
+			tip = "the lit core's brightness at full illumination" },
+	},
+	daylight = {
+		{ key = "fibre", label = "Fibre", min = 0, max = 7.9, default = 1,
+			tip = "the lit core per unit of sky light: bright by day, dark at night" },
+		{ key = "tritium", label = "Tritium", min = 0, max = 255, default = 0.03, drag = true,
+			tip = "a constant glow (scene luminance): what shows at night" },
+	},
+	glow = {
+		{ key = "glow_strength", label = "Glow strength", min = 0, max = 7.9, default = 1 },
+		{ key = "glow_size", label = "Glow size", min = 0.25, max = 4, default = 1 },
+	},
+	holo = {
+		{ key = "softness", label = "Softness", min = 1, max = 4, default = 1.25 },
+		{ key = "level", label = "Level", min = 0.05, max = 2.5, default = 0.75 },
+		{ key = "ghost_level", label = "Ghost level", min = 0, max = 0.5, default = 0 },
+		{ key = "fringe", label = "Colour fringe", min = 0, max = 2.5, default = 0 },
+		{ key = "flicker", label = "Flicker", min = 0, max = 1, default = 0 },
+	},
+	mask = {
+		{ key = "depth", label = "Grain depth", min = 0, max = 1, default = 1 },
+		{ key = "size", label = "Grain size", min = 0.0625, max = 4095, default = 10, drag = true,
+			tip = "reticle units per repeat of the image" },
+		{ key = "eye_shift", label = "Eye shift", min = 0, max = 2.55, default = 0,
+			tip = "units the grain moves per mm of eye movement" },
+		{ key = "animate", label = "Changes per second", min = 0, max = 15.9, default = 0,
+			tip = "the grain cross-fades to a new place this many times a second; 0 = still (it moves only with the eye)" },
+	},
+}
+
+-- --- the settings file as lines, so comments and order survive an edit ---------------------------------------
+
+local function parse(text)
+	local lines = {}
+	for line in (text or ""):gsub("\r\n", "\n"):gmatch("([^\n]*)\n?") do
+		lines[#lines + 1] = line
+	end
+	while #lines > 0 and lines[#lines] == "" do
+		table.remove(lines)
+	end
+	return { lines = lines, version = 0 }
+end
+
+-- the settings as text, built again only after the lines change
+local function to_text(doc)
+	if doc.text_version ~= doc.version then
+		doc.text = table.concat(doc.lines, "\r\n") .. "\r\n"
+		doc.text_version = doc.version
+	end
+	return doc.text
+end
+
+local function section_of(line)
+	return line:match("^%s*%[([^%]]+)%]")
+end
+
+-- key, value and inline comment of a key line
+local function key_of(line)
+	if line:match("^%s*[;#]") then
+		return
+	end
+	local key, rest = line:match("^%s*([%w_]+)%s*=%s*(.*)$")
+	if not key then
+		return
+	end
+	local value, comment = rest:match("^(.-)%s+(;.*)$")
+	value = (value or rest):gsub("%s+$", "")
+	return key:lower(), value, comment
+end
+
+-- the header line of `section` and the line after its body
+local function find_section(doc, section)
+	local first
+	for i, line in ipairs(doc.lines) do
+		local name = section_of(line)
+		if name then
+			if first then
+				return first, i
+			end
+			if name:lower() == section then
+				first = i
+			end
+		end
+	end
+	if first then
+		return first, #doc.lines + 1
+	end
+end
+
+local function get(doc, section, key)
+	local first, last = find_section(doc, section)
+	for i = (first or 0) + 1, (last or 0) - 1 do
+		local k, value = key_of(doc.lines[i])
+		if k == key then
+			return value
+		end
+	end
+end
+
+-- value nil removes the key
+local function set(doc, section, key, value)
+	doc.version = doc.version + 1
+	local first, last = find_section(doc, section)
+	if not first then
+		if value == nil then
+			return
+		end
+		if #doc.lines > 0 then
+			doc.lines[#doc.lines + 1] = ""
+		end
+		doc.lines[#doc.lines + 1] = "[" .. section .. "]"
+		first, last = #doc.lines, #doc.lines + 1
+	end
+	for i = first + 1, last - 1 do
+		local k, _, comment = key_of(doc.lines[i])
+		if k == key then
+			if value == nil then
+				table.remove(doc.lines, i)
+			else
+				doc.lines[i] = key .. " = " .. value .. (comment and ("  " .. comment) or "")
+			end
+			return
+		end
+	end
+	if value ~= nil then
+		local at = last
+		while at - 1 > first and doc.lines[at - 1]:match("^%s*$") do
+			at = at - 1
+		end
+		table.insert(doc.lines, at, key .. " = " .. value)
+	end
+end
+
+-- removes `section` and returns its lines
+local function remove_section(doc, section)
+	local first, last = find_section(doc, section)
+	local removed = {}
+	if first then
+		doc.version = doc.version + 1
+		for i = last - 1, first, -1 do
+			table.insert(removed, 1, table.remove(doc.lines, i))
+		end
+	end
+	return removed
+end
+
+local function append_lines(doc, lines)
+	doc.version = doc.version + 1
+	if #lines > 0 and #doc.lines > 0 and doc.lines[#doc.lines] ~= "" then
+		doc.lines[#doc.lines + 1] = ""
+	end
+	for _, line in ipairs(lines) do
+		doc.lines[#doc.lines + 1] = line
+	end
+end
+
+local function number_text(value)
+	return string.format("%.6g", value)
+end
+
+-- --- files -----------------------------------------------------------------------------------------------------
+
+-- a shipped file through the game's file system (MO2's virtual folder included)
+local function texture_path(name)
+	return getFS():update_path("$game_textures$", name)
+end
+
+local function has_texture_file(name)
+	return getFS():exist("$game_textures$", name) and true or false
+end
+
+local function folder_of(path)
+	return path:match("^(.*[\\/])") or ""
+end
+
+local function base_name(path)
+	return path:match("([^\\/]+)$") or path
+end
+
+-- the user's own file for `texture`: appdata\reticles\<texture><extension>
+local function user_file(texture, extension)
+	return getFS():update_path("$app_data_root$", USER_FOLDER .. texture .. extension)
+end
+
+local function has_user_reticle(texture)
+	return bodycam.file_exists(user_file(texture, ".svg")) and bodycam.file_exists(user_file(texture, ".reticle.ini"))
+end
+
+local function same_path(a, b)
+	return a:gsub("/", "\\"):lower() == b:gsub("/", "\\"):lower()
+end
+
+local function is_absolute(path)
+	return path:sub(2, 2) == ":" or path:sub(1, 1) == "\\" or path:sub(1, 1) == "/"
+end
+
+-- an imported grain image's name beside the user's drawing: the sight's name first, so two sights in one folder
+-- that import images of the same name keep their own
+local function own_image_name(texture, path)
+	local prefix = base_name(texture) .. "_"
+	local name = base_name(path)
+	return name:sub(1, #prefix):lower() == prefix:lower() and name or prefix .. name
+end
+
+-- --- the edited reticle ----------------------------------------------------------------------------------------
+
+local function engine_ready()
+	return get_console():get_string("r__reticle_edit_status") ~= nil and rawget(_G, "bodycam") ~= nil
+		and bodycam.list_dir ~= nil
+end
+
+local function status_text()
+	return get_console():get_string("r__reticle_edit_status") or ""
+end
+
+-- the user's own reticle, else the shipped one (its settings, or new ones if it has none). A rebuild on screen that
+-- was never saved goes back to the sight's own reticle first.
+local function load_texture(texture)
+	if state.texture and state.live_edit then
+		exec_console_cmd("r__reticle_reload " .. state.texture)
+	end
+	state.texture, state.source, state.doc, state.original, state.problem = texture, nil, nil, nil, nil
+	state.want_grain, state.switched_off, state.stashed = false, {}, {}
+	state.apply_at, state.live_edit = nil, false
+	if not texture then
+		return
+	end
+	local text
+	if has_user_reticle(texture) then
+		state.source, text = "yours", bodycam.read_file(user_file(texture, ".reticle.ini"))
+	elseif has_texture_file(texture .. ".svg") then
+		state.source, text = "original", bodycam.read_file(texture_path(texture .. ".reticle.ini")) or DEFAULT_SETTINGS
+	else
+		state.problem = "drawn from a bitmap: Load SVG to give this sight a vector reticle"
+		return
+	end
+	state.original = text
+	state.doc = parse(text)
+	printf("[RETICLE-EDITOR] editing %s", texture)
+end
+
+local function session_path()
+	return getFS():update_path("$app_data_root$", SESSION_FILE)
+end
+
+local function send(command)
+	local path = session_path()
+	if not bodycam.write_file(path, to_text(state.doc)) then
+		return false
+	end
+	exec_console_cmd(command .. " " .. state.texture .. " " .. path)
+	return true
+end
+
+local function apply()
+	state.apply_at = nil
+	if state.doc and send("r__reticle_edit") then
+		state.live_edit = true
+	end
+end
+
+local function changed()
+	if state.auto_apply then
+		state.apply_at = time_global() + APPLY_DELAY_MS
+	end
+end
+
+-- the texture again from its sources, the editor with it (after the user's files changed)
+local function reload()
+	exec_console_cmd("r__reticle_reload " .. state.texture)
+	state.live_edit = false
+	load_texture(state.texture)
+end
+
+-- Makes the reticle the user's own: the drawing (`svg`, else the one in use) and the grain image into the user
+-- folder, then the settings. Returns what went wrong, if anything.
+local function write_yours(svg)
+	local texture = state.texture
+	local own_svg = user_file(texture, ".svg")
+	if svg then
+		if not same_path(svg, own_svg) and not bodycam.copy_file(svg, own_svg) then
+			return "could not copy " .. svg
+		end
+	elseif not bodycam.file_exists(own_svg) and not bodycam.copy_file(texture_path(texture .. ".svg"), own_svg) then
+		return "could not copy the drawing to " .. own_svg
+	end
+	local image = get(state.doc, "mask", "image")
+	if image and is_absolute(image) then
+		-- a path typed into the settings by hand: the image goes beside the drawing like a loaded one
+		local name = own_image_name(texture, image)
+		if not bodycam.copy_file(image, folder_of(own_svg) .. name) then
+			return "could not copy the grain image " .. image
+		end
+		set(state.doc, "mask", "image", name)
+	elseif image and not bodycam.file_exists(folder_of(own_svg) .. image)
+		and not bodycam.copy_file(texture_path(folder_of(texture) .. image), folder_of(own_svg) .. image) then
+		return "could not find the grain image " .. image
+	end
+	if not bodycam.write_file(user_file(texture, ".reticle.ini"), to_text(state.doc)) then
+		return "could not write " .. user_file(texture, ".reticle.ini")
+	end
+end
+
+local function save()
+	state.apply_at = nil
+	state.problem = write_yours(nil)
+	if not state.problem then
+		reload()
+	end
+end
+
+-- a drawing from anywhere becomes this sight's reticle at once, keeping the settings being edited
+local function load_svg(path)
+	state.apply_at = nil
+	state.doc = state.doc or parse(DEFAULT_SETTINGS)
+	state.problem = write_yours(path)
+	if not state.problem then
+		reload()
+	end
+end
+
+-- a grain image from anywhere is copied beside the user's drawing, where the engine looks first
+local function load_image(path)
+	local name = own_image_name(state.texture, path)
+	local own = folder_of(user_file(state.texture, ".svg")) .. name
+	if not same_path(path, own) and not bodycam.copy_file(path, own) then
+		state.problem = "could not copy " .. path
+		return
+	end
+	set(state.doc, "mask", "image", name)
+	state.want_grain = false
+	changed()
+end
+
+-- whether another of the user's reticles in `folder` uses grain image `image`
+local function image_in_use(folder, image)
+	for _, entry in ipairs(bodycam.list_dir(folder) or {}) do
+		if not entry.dir and entry.name:lower():match("%.reticle%.ini$") then
+			local other = get(parse(bodycam.read_file(folder .. entry.name)), "mask", "image")
+			if other and other:lower() == image:lower() then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+-- deletes the user's reticle for this sight; the shipped one (or the bitmap) comes back
+local function reset()
+	local own_svg = user_file(state.texture, ".svg")
+	local own_ini = user_file(state.texture, ".reticle.ini")
+	local image = get(parse(bodycam.read_file(own_ini)), "mask", "image")
+	bodycam.remove_file(own_svg)
+	bodycam.remove_file(own_ini)
+	if image and not image_in_use(folder_of(own_svg), image) then
+		bodycam.remove_file(folder_of(own_svg) .. image)
+	end
+	reload()
+end
+
+local function revert()
+	state.doc = parse(state.original)
+	apply()
+end
+
+-- the reticle textures of the held weapon: its 3DSS reticle profile, then its reticle materials (reflex sights)
+local function held_reticles(weapon)
+	local list, seen = {}, {}
+	local function add(texture, label)
+		texture = texture and texture:gsub("^%s+", ""):gsub("%s+$", ""):gsub("/", "\\")
+		if texture and texture ~= "" and not seen[texture:lower()] then
+			seen[texture:lower()] = true
+			list[#list + 1] = { texture = texture, label = label }
+		end
+	end
+	local profiles = rawget(_G, "z_3dss_reticle_profiles")
+	local profile_section = profiles and profiles.get_profile_section(weapon)
+	local profile = profile_section and profiles.get_selected_profile(profile_section)
+	if profile then
+		add(ini_sys:r_string_ex(profile, "reticle_texture"), profile)
+	end
+	local ok, shaders = pcall(function()
+		return weapon:get_shaders(true)
+	end)
+	if ok and type(shaders) == "table" then
+		for _, material in pairs(shaders) do
+			if material and material.texture and tostring(material.shader or ""):lower():find("reticle", 1, true) then
+				add(tostring(material.texture), "material")
+			end
+		end
+	end
+	return list, profiles, profile_section, profile
+end
+
+-- --- hold aim --------------------------------------------------------------------------------------------------
+
+local function window_on_screen()
+	return show_window and time_global() - state.drawn_at < SHOWN_MS
+end
+
+local function update_hold()
+	local zoom = bind_to_dik(key_bindings.kWPN_ZOOM)
+	local weapon = db.actor and db.actor:active_item()
+	if state.hold_aim and window_on_screen() and weapon and IsWeapon(weapon) then
+		if not axr_main.weapon_is_zoomed and time_global() - state.hold_pressed_at > HOLD_RETRY_MS then
+			if state.holding then
+				level.release_action(zoom)
+			end
+			level.press_action(zoom)
+			state.holding = true
+			state.hold_pressed_at = time_global()
+		end
+	elseif state.holding then
+		level.release_action(zoom)
+		state.holding = false
+	end
+end
+
+-- --- inspect -------------------------------------------------------------------------------------------------
+
+local function inspect_ready()
+	return get_console():get_string("r__reticle_inspect") ~= nil
+end
+
+local function send_inspect(zoom)
+	if zoom ~= state.inspect_sent then
+		exec_console_cmd("r__reticle_inspect " .. string.format("%.3f", zoom))
+		state.inspect_sent = zoom
+	end
+end
+
+-- zoomed while ticked and the window is on screen, else back to 1
+local function update_inspect()
+	if not show_window and state.inspect_sent == 1 then
+		return
+	end
+	if inspect_ready() then
+		send_inspect(state.inspect and window_on_screen() and state.inspect_zoom or 1)
+	end
+end
+
+-- --- widgets ---------------------------------------------------------------------------------------------------
+
+local CLAMP = ImGuiSliderFlags and ImGuiSliderFlags.AlwaysClamp or 0
+local LOG = ImGuiSliderFlags and ImGuiSliderFlags.Logarithmic or 0
+local LABEL_WIDTH = 220
+-- the Lua bindings take every argument (no C++ defaults); a missing vector2 is a null dereference in the engine
+local NO_SIZE = vector2():set(0, 0)
+
+local function tooltip(text)
+	if text then
+		ImGui.SetItemTooltip(text)
+	end
+end
+
+local function draw_number(section, field)
+	local raw = get(state.doc, section, field.key)
+	local value = tonumber(raw)
+	local enabled = raw ~= nil
+	ImGui.PushID(section .. field.key)
+	if field.optional then
+		local toggled, on = ImGui.Checkbox("##on", enabled)
+		if toggled then
+			local id = section .. "." .. field.key
+			if not on then
+				state.switched_off[id] = value
+			end
+			set(state.doc, section, field.key, on and number_text(state.switched_off[id] or field.default or field.min) or nil)
+			changed()
+		end
+		tooltip("switch this setting on or off")
+		ImGui.SameLine(0)
+	end
+	ImGui.Text(field.label)
+	tooltip(field.tip)
+	ImGui.SameLine(LABEL_WIDTH)
+	ImGui.SetNextItemWidth(-1)
+	ImGui.BeginDisabled(field.optional and not enabled)
+	local current = value or state.switched_off[section .. "." .. field.key] or field.default or field.min
+	local edited, result
+	if field.drag then
+		edited, result = ImGui.DragFloat("##value", current, math.max(math.abs(current) * 0.002, 0.0001), field.min, field.max,
+			"%.4g", CLAMP + LOG)
+	else
+		edited, result = ImGui.SliderFloat("##value", current, field.min, field.max, "%.3f", CLAMP)
+	end
+	ImGui.EndDisabled()
+	if edited then
+		set(state.doc, section, field.key, number_text(result))
+		changed()
+	end
+	ImGui.PopID()
+end
+
+local function draw_choice(section, key, label, choices, default, tip)
+	local current = (get(state.doc, section, key) or default):lower()
+	ImGui.Text(label)
+	tooltip(tip)
+	for _, choice in ipairs(choices) do
+		ImGui.SameLine(choice == choices[1] and LABEL_WIDTH or 0)
+		if ImGui.RadioButton(choice[2] .. "##" .. key, current == choice[1]) and current ~= choice[1] then
+			set(state.doc, section, key, choice[1])
+			changed()
+		end
+	end
+end
+
+local function draw_steps()
+	local raw = get(state.doc, "illumination", "brightness_steps")
+	local steps = {}
+	for token in string.gmatch(raw or "", "[^,%s]+") do
+		steps[#steps + 1] = tonumber(token) or 0
+	end
+	local function write()
+		local parts = {}
+		for i, v in ipairs(steps) do
+			parts[i] = number_text(v)
+		end
+		set(state.doc, "illumination", "brightness_steps", #parts > 0 and table.concat(parts, ", ") or nil)
+		changed()
+	end
+	ImGui.Text("Brightness steps")
+	tooltip("a brightness per Mark Switch position; none = the Mark Switch colour's own brightness")
+	ImGui.SameLine(LABEL_WIDTH)
+	if ImGui.SmallButton("+##steps") and #steps < 8 then
+		steps[#steps + 1] = 1
+		write()
+	end
+	ImGui.SameLine(0)
+	if ImGui.SmallButton("-##steps") and #steps > 0 then
+		steps[#steps] = nil
+		write()
+	end
+	for i, v in ipairs(steps) do
+		ImGui.Text("  position " .. (i - 1))
+		ImGui.SameLine(LABEL_WIDTH)
+		ImGui.SetNextItemWidth(-1)
+		local edited, result = ImGui.SliderFloat("##step" .. i, v, 0, 1, "%.3f", CLAMP)
+		if edited then
+			steps[i] = result
+			write()
+		end
+	end
+end
+
+-- The light source: a battery (luminance and brightness steps per Mark Switch position) or daylight through a fibre
+-- with a tritium glow, always on. Switching keeps the other source's values for when it comes back.
+local BATTERY_KEYS = { "luminance", "brightness_steps" }
+local DAYLIGHT_KEYS = { "fibre", "tritium" }
+
+local function daylight_lit()
+	return get(state.doc, "illumination", "fibre") ~= nil or get(state.doc, "illumination", "tritium") ~= nil
+end
+
+local function swap_light_source(off_keys, on_keys, defaults)
+	for _, key in ipairs(off_keys) do
+		local raw = get(state.doc, "illumination", key)
+		state.switched_off["illumination." .. key] = tonumber(raw) or raw
+		set(state.doc, "illumination", key, nil)
+	end
+	for _, key in ipairs(on_keys) do
+		local value = state.switched_off["illumination." .. key] or defaults[key]
+		set(state.doc, "illumination", key, value and tostring(value) or nil)
+	end
+	changed()
+end
+
+local function draw_light_source()
+	local daylight = daylight_lit()
+	ImGui.Text("Light source")
+	tooltip("a battery lights the reticle as the Mark Switch says; a fibre and tritium sight is always lit")
+	ImGui.SameLine(LABEL_WIDTH)
+	if ImGui.RadioButton("Battery##light_source", not daylight) and daylight then
+		swap_light_source(DAYLIGHT_KEYS, BATTERY_KEYS, {})
+	end
+	ImGui.SameLine(0)
+	if ImGui.RadioButton("Fibre and tritium##light_source", daylight) and not daylight then
+		swap_light_source(BATTERY_KEYS, DAYLIGHT_KEYS, { fibre = 1, tritium = 0.03 })
+	end
+end
+
+local function draw_ghost_offset()
+	local x, y = 0, 0
+	local raw = get(state.doc, "holo", "ghost_offset")
+	if raw then
+		x, y = raw:match("^%s*([^,%s]+)%s*,%s*([^,%s]+)")
+		x, y = tonumber(x) or 0, tonumber(y) or 0
+	end
+	ImGui.Text("Ghost offset")
+	tooltip("where the ghost image sits, x and y in reticle units")
+	ImGui.SameLine(LABEL_WIDTH)
+	ImGui.SetNextItemWidth(-1)
+	local edited, v = ImGui.SliderFloat2("##ghost_offset", vector2():set(x, y), -15, 15, "%.2f", CLAMP)
+	if edited then
+		set(state.doc, "holo", "ghost_offset", number_text(v.x) .. ", " .. number_text(v.y))
+		changed()
+	end
+end
+
+-- --- file browser --------------------------------------------------------------------------------------------
+-- Lists real folders through the engine (bodycam.list_dir), never through the game's file system: a rescan of
+-- gamedata\\textures under MO2 drops the mods' files from the engine's index.
+
+local BROWSE = {
+	svg = { title = "Load SVG", extension = ".svg", load = load_svg },
+	png = { title = "Load grain image", extension = ".png", load = load_image },
+}
+local browser = { kind = nil, folder = nil, typed = "", selected = nil, entries = nil, drives = nil }
+
+local function browse_to(folder)
+	if not folder:match("[\\/]$") then
+		folder = folder .. "\\"
+	end
+	browser.folder, browser.typed, browser.selected = folder, folder, nil
+	browser.entries = bodycam.list_dir(folder)
+end
+
+local function open_browser(kind)
+	browser.kind = kind
+	browser.drives = bodycam.drives()
+	browse_to(browser.folder or getFS():update_path("$app_data_root$", ""))
+end
+
+local function draw_browser_entries(kind)
+	if not browser.entries then
+		ImGui.TextDisabled("cannot read this folder")
+		return
+	end
+	for _, entry in ipairs(browser.entries) do
+		if entry.dir then
+			if ImGui.Selectable("[" .. entry.name .. "]", false, 0, NO_SIZE) then
+				return browse_to(browser.folder .. entry.name)
+			end
+		elseif entry.name:lower():sub(-#kind.extension) == kind.extension then
+			local path = browser.folder .. entry.name
+			if ImGui.Selectable(entry.name, browser.selected == path, ImGuiSelectableFlags.AllowDoubleClick, NO_SIZE) then
+				browser.selected = path
+				if ImGui.IsMouseDoubleClicked(0) then
+					browser.kind = nil
+					return kind.load(path)
+				end
+			end
+		end
+	end
+end
+
+local function draw_browser()
+	local kind = BROWSE[browser.kind]
+	ImGui.SetNextWindowPos(vector2():set(720, 60), ImGuiCond.FirstUseEver)
+	ImGui.SetNextWindowSize(vector2():set(560, 480), ImGuiCond.FirstUseEver)
+	local expanded, open = ImGui.Begin(kind.title .. "###reticle_editor_browser", true, 0)
+	if not open then
+		browser.kind = nil
+	end
+	if expanded then
+		for _, drive in ipairs(browser.drives or {}) do
+			if ImGui.SmallButton(drive) then
+				browse_to(drive)
+			end
+			ImGui.SameLine(0)
+		end
+		if ImGui.SmallButton("Up") then
+			local up = browser.folder:match("^(.*[\\/])[^\\/]+[\\/]$")
+			if up then
+				browse_to(up)
+			end
+		end
+		ImGui.SetNextItemWidth(-90)
+		local typed, entered = ImGui.InputText("##folder", browser.typed, 260, ImGuiInputTextFlags.EnterReturnsTrue, false)
+		browser.typed = typed or browser.typed
+		ImGui.SameLine(0)
+		if ImGui.Button("Go") or entered then
+			browse_to(browser.typed)
+		end
+		if ImGui.BeginListBox("##entries", vector2():set(-1, -32)) then
+			draw_browser_entries(kind)
+			ImGui.EndListBox()
+		end
+		ImGui.BeginDisabled(browser.selected == nil)
+		if ImGui.Button("Load") then
+			browser.kind = nil
+			kind.load(browser.selected)
+		end
+		ImGui.EndDisabled()
+		ImGui.SameLine(0)
+		if ImGui.Button("Cancel") then
+			browser.kind = nil
+		end
+		ImGui.SameLine(0)
+		ImGui.TextDisabled(browser.selected and base_name(browser.selected) or ("pick a " .. kind.extension .. " file"))
+	end
+	ImGui.End()
+end
+
+-- --- settings --------------------------------------------------------------------------------------------------
+
+local function draw_mask_image()
+	local image = get(state.doc, "mask", "image")
+	ImGui.Text("Grain image")
+	tooltip("a grey PNG, a power of two from 2 to 1024 each way; it is copied beside your drawing")
+	ImGui.SameLine(LABEL_WIDTH)
+	if ImGui.Button("Load image", vector2():set(110, 0)) then
+		open_browser("png")
+	end
+	ImGui.SameLine(0)
+	ImGui.Text(image or "(none)")
+end
+
+-- A section that is present or absent as a whole ([holo]). `dependent` (its [mask]) goes with it and comes back
+-- with it; switched back on, the section returns as it was.
+local function draw_section_toggle(section, label, tip, first_key, first_value, dependent)
+	local present = find_section(state.doc, section) ~= nil
+	local toggled, on = ImGui.Checkbox(label, present)
+	tooltip(tip)
+	if toggled then
+		if on then
+			if state.stashed[section] and #state.stashed[section] > 0 then
+				append_lines(state.doc, state.stashed[section])
+			else
+				set(state.doc, section, first_key, first_value)
+			end
+			if dependent and state.stashed[dependent] then
+				append_lines(state.doc, state.stashed[dependent])
+			end
+		else
+			state.stashed[section] = remove_section(state.doc, section)
+			if dependent then
+				state.stashed[dependent] = remove_section(state.doc, dependent)
+			end
+		end
+		changed()
+	end
+	return find_section(state.doc, section) ~= nil
+end
+
+local function draw_settings()
+	if ImGui.CollapsingHeader("Drawing", ImGuiTreeNodeFlags and ImGuiTreeNodeFlags.DefaultOpen or 0) then
+		draw_number("reticle", NUMBERS.reticle[1])
+		draw_choice("reticle", "units", "Units", { { "moa", "MOA" }, { "mil", "MIL" } }, "moa")
+		draw_number("reticle", NUMBERS.reticle[2])
+		draw_number("reticle", NUMBERS.reticle[3])
+	end
+	if ImGui.CollapsingHeader("Illumination", ImGuiTreeNodeFlags and ImGuiTreeNodeFlags.DefaultOpen or 0) then
+		draw_choice("illumination", "colour", "Colour", { { "sight", "Sight's Mark Switch" }, { "drawing", "Drawing's fills" } },
+			"sight", "where the light's colour comes from")
+		draw_light_source()
+		if daylight_lit() then
+			for _, field in ipairs(NUMBERS.daylight) do
+				draw_number("illumination", field)
+			end
+		else
+			draw_number("illumination", NUMBERS.battery[1])
+			draw_steps()
+		end
+		for _, field in ipairs(NUMBERS.glow) do
+			draw_number("illumination", field)
+		end
+	end
+	if ImGui.CollapsingHeader("Hologram") then
+		ImGui.TextDisabled("Hologram and grain show on reflex and holographic sights only")
+		if draw_section_toggle("holo", "Holographic sight", "softer, dimmer light with an optional ghost, fringe, flicker and grain",
+			"level", "0.75", "mask") then
+			for _, field in ipairs(NUMBERS.holo) do
+				draw_number("holo", field)
+			end
+			draw_ghost_offset()
+			ImGui.Separator()
+			local present = find_section(state.doc, "mask") ~= nil
+			local toggled, on = ImGui.Checkbox("Grain", present or state.want_grain)
+			tooltip("the laser speckle: a grey image multiplied into the light")
+			if toggled then
+				if on then
+					local last = state.original and get(parse(state.original), "mask", "image")
+					if last then
+						set(state.doc, "mask", "image", last)
+						changed()
+					else
+						state.want_grain = true
+					end
+				else
+					state.want_grain = false
+					remove_section(state.doc, "mask")
+					changed()
+				end
+			end
+			if present or state.want_grain then
+				draw_mask_image()
+			end
+			if find_section(state.doc, "mask") then
+				for _, field in ipairs(NUMBERS.mask) do
+					draw_number("mask", field)
+				end
+			end
+		end
+	end
+end
+
+local function draw_target()
+	local weapon = db.actor and db.actor:active_item()
+	if not (weapon and IsWeapon(weapon)) then
+		ImGui.TextDisabled("Hold a weapon with a sight")
+		load_texture(nil)
+		return false
+	end
+	-- the reticle list asks the weapon for its materials: once per weapon and 3DSS profile, not every frame
+	local profiles = rawget(_G, "z_3dss_reticle_profiles")
+	local section = profiles and profiles.get_profile_section(weapon)
+	local key = weapon:id() .. "|" .. tostring(section and profiles.get_selected_profile(section))
+	if not state.held or state.held.key ~= key then
+		local list, _, profile_section, profile = held_reticles(weapon)
+		state.held = { key = key, reticles = list, profile_section = profile_section, profile = profile }
+	end
+	local reticles, profile_section, profile = state.held.reticles, state.held.profile_section, state.held.profile
+	local still_held = false
+	for _, r in ipairs(reticles) do
+		still_held = still_held or r.texture == state.texture
+	end
+	if state.weapon_id ~= weapon:id() or not still_held then
+		state.weapon_id = weapon:id()
+		load_texture(reticles[1] and reticles[1].texture)
+	end
+	if profile_section and profiles then
+		ImGui.Text("3DSS reticle profile")
+		ImGui.SameLine(LABEL_WIDTH)
+		ImGui.SetNextItemWidth(-1)
+		if ImGui.BeginCombo("##profile", tostring(profile), 0) then
+			for _, name in ipairs(profiles.get_profiles(profile_section)) do
+				if ImGui.Selectable(name, name == profile, 0, NO_SIZE) and name ~= profile then
+					profiles.select_profile(weapon, profile_section, name)
+					state.weapon_id, state.held = nil, nil
+				end
+			end
+			ImGui.EndCombo()
+		end
+	end
+	ImGui.Text("Reticle texture")
+	ImGui.SameLine(LABEL_WIDTH)
+	ImGui.SetNextItemWidth(-1)
+	if ImGui.BeginCombo("##texture", state.texture or "(none)", 0) then
+		for _, r in ipairs(reticles) do
+			if ImGui.Selectable(r.texture .. "  (" .. r.label .. ")", r.texture == state.texture, 0, NO_SIZE) then
+				load_texture(r.texture)
+			end
+		end
+		ImGui.EndCombo()
+	end
+	if state.texture then
+		-- where your drawing for this sight is; empty while it has none (the shipped one or the bitmap)
+		local own = state.source == "yours" and user_file(state.texture, ".svg") or ""
+		ImGui.Text("Your drawing")
+		tooltip("your SVG for this sight, in appdata\\reticles; empty: the sight shows its original reticle")
+		ImGui.SameLine(LABEL_WIDTH)
+		ImGui.SetNextItemWidth(-1)
+		ImGui.InputText("##drawing_path", own, 520, ImGuiInputTextFlags.ReadOnly, false)
+		tooltip(own ~= "" and own or nil)
+		ImGui.SetCursorPosX(LABEL_WIDTH)
+		if ImGui.Button("Load SVG", vector2():set(100, 0)) then
+			open_browser("svg")
+		end
+		tooltip("draw this sight from an SVG file; it becomes your reticle for this texture at once")
+		ImGui.SameLine(0)
+		ImGui.BeginDisabled(state.source ~= "yours")
+		if ImGui.Button("Reset to original", vector2():set(150, 0)) then
+			reset()
+		end
+		ImGui.EndDisabled()
+		tooltip("delete your drawing and settings for this texture")
+	end
+	if state.problem then
+		ImGui.PushTextWrapPos(0)
+		ImGui.TextDisabled(state.problem)
+		ImGui.PopTextWrapPos()
+	end
+	return state.doc ~= nil
+end
+
+local function draw_controls()
+	local toggled, on = ImGui.Checkbox("Hold aim", state.hold_aim)
+	if toggled then
+		state.hold_aim = on
+	end
+	tooltip("keep the sight raised while you adjust the values")
+	ImGui.SameLine(0)
+	if inspect_ready() then
+		toggled, on = ImGui.Checkbox("Inspect", state.inspect)
+		if toggled then
+			state.inspect = on
+		end
+		tooltip("draw the sight closer, to see the reticle while you adjust it")
+		ImGui.SameLine(0)
+	end
+	toggled, on = ImGui.Checkbox("Apply as I edit", state.auto_apply)
+	if toggled then
+		state.auto_apply = on
+	end
+	ImGui.SameLine(0)
+	if ImGui.Button("Apply") then
+		apply()
+	end
+	ImGui.SameLine(0)
+	if ImGui.Button("Save") then
+		save()
+	end
+	tooltip("keep these settings: they become your reticle for this texture (appdata\\reticles)")
+	ImGui.SameLine(0)
+	ImGui.BeginDisabled(to_text(state.doc) == state.original)
+	if ImGui.Button("Revert") then
+		revert()
+	end
+	ImGui.EndDisabled()
+	tooltip("back to the settings as loaded or last saved")
+	if state.inspect and inspect_ready() then
+		ImGui.Text("Inspect zoom")
+		ImGui.SameLine(LABEL_WIDTH)
+		ImGui.SetNextItemWidth(-1)
+		local edited, zoom = ImGui.SliderFloat("##inspect_zoom", state.inspect_zoom, 1, 8, "%.1fx", CLAMP)
+		if edited then
+			state.inspect_zoom = zoom
+		end
+	end
+	local status = status_text()
+	ImGui.Text("Engine: " .. (#status > 90 and status:sub(1, 87) .. "..." or status))
+	tooltip(#status > 90 and status or nil)
+end
+
+local function render_window()
+	ImGui.SetNextWindowSize(vector2():set(640, 720), ImGuiCond.FirstUseEver)
+	local expanded, visible = ImGui.Begin("Reticle Editor", show_window, 0)
+	show_window = not not visible
+	state.drawn_at = time_global()
+	if expanded then
+		if not engine_ready() then
+			ImGui.TextDisabled("This engine cannot rebuild reticles in game (no r__reticle_edit)")
+		elseif draw_target() then
+			ImGui.Separator()
+			draw_controls()
+			ImGui.Separator()
+			draw_settings()
+		end
+	end
+	ImGui.End()
+	if browser.kind and state.texture then
+		draw_browser()
+	end
+end
+
+local function actor_on_update()
+	if state.apply_at and time_global() >= state.apply_at then
+		apply()
+	end
+	-- closed: an edit that was never saved goes back to the sight's own reticle
+	if state.was_open and not show_window and state.texture and state.live_edit then
+		reload()
+	end
+	state.was_open = show_window
+	update_hold()
+	update_inspect()
+end
+
+-- leaving the level: never leave the HUD zoomed
+local function actor_on_net_destroy()
+	if inspect_ready() then
+		send_inspect(1)
+	end
+end
+
+if ImGui and ImGui.Groups and ImGui.Groups.Main and ImGui.Groups.Mods then
+	ImGui.Groups.Main.Widget(function()
+		if show_window then
+			render_window()
+		end
+	end)
+	ImGui.Groups.Mods.Widget(function()
+		local _, selected = ImGui.MenuItem("Reticle Editor", nil, show_window, true)
+		show_window = not not selected
+	end)
+end
+
+-- for key bindings and tests: show or hide the window, hold the aim, draw the window from another ImGui group
+function draw_window()
+	if show_window then
+		render_window()
+	end
+end
+
+function open(show)
+	show_window = show ~= false
+end
+
+function set_hold_aim(on)
+	state.hold_aim = on ~= false
+end
+
+function on_game_start()
+	RegisterScriptCallback("actor_on_update", actor_on_update)
+	RegisterScriptCallback("actor_on_net_destroy", actor_on_net_destroy)
+end

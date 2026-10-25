@@ -16,7 +16,7 @@
 #include "svp_hooks_reticle.h"
 #include "svp_hooks_shadow.h"
 #include "svp_hooks_inside.h"
-#include "reticle_msdf.h"
+#include "reticle_atlas.h"
 
 #ifndef SVP_RETICLE_PROJECTION_DECLARED
 #define SVP_RETICLE_PROJECTION_DECLARED
@@ -55,10 +55,10 @@ Texture2D scope_reference_ocular;
 uniform float4 scope_reference_transfer; // x = the Reference image's tone map input gamma
 #endif
 
-// The light behind an MSDF reticle pixel, in the domain the lens image was written in: painted marks reflect it.
+// The light behind an atlas reticle pixel, in the domain the lens image was written in: painted marks reflect it.
 // Reference: the optical image tone mapped as its image pass does. PiP: the eyepiece capture at the image
 // pass's coordinate with its exposure terms. Fake PiP: the main frame pixel the lens shows.
-float3 scope_msdf_background(Scope S, float2 image_tc)
+float3 scope_reticle_background(Scope S, float2 image_tc)
 {
 #ifdef SCOPE_REFERENCE_MARK_ONLY
 	const float3 raw = scope_reference_ocular.Load(int3(S.hpos.xy, 0)).rgb;
@@ -80,8 +80,8 @@ float3 scope_msdf_background(Scope S, float2 image_tc)
 #endif
 }
 
-#if defined(RETICLE_MSDF_EMISSION_PASS) && !defined(SCOPE_REFERENCE_MARK_ONLY)
-// engine (PiP): a reflex drawn into the eyepiece capture (a hybrid magnifier) leaves its MSDF light in these
+#if defined(RETICLE_ATLAS_EMISSION_PASS) && !defined(SCOPE_REFERENCE_MARK_ONLY)
+// engine (PiP): a reflex drawn into the eyepiece capture (a hybrid magnifier) leaves its atlas reticle light in these
 // capture-space targets; x 1 = they hold this frame's light
 Texture2D s_reticle_capture_emission;
 Texture2D s_reticle_capture_glow;
@@ -89,7 +89,7 @@ uniform float4 reticle_capture_glow;
 
 // That light where the lens shows the capture (the image pass's coordinate), through the lens's transmission and
 // its dirt, added to the emission pass's core and glow source
-void scope_msdf_capture_light(Scope S, float transmission, float dirt, inout float4 core)
+void scope_reticle_capture_light(Scope S, float transmission, float dirt, inout float4 core)
 {
 	if (reticle_capture_glow.x < 0.5)
 		return;
@@ -100,54 +100,53 @@ void scope_msdf_capture_light(Scope S, float transmission, float dirt, inout flo
 	const float3 light = s_reticle_capture_emission.SampleLevel(smp_rtlinear, image_tc, 0).rgb * LENS_COLOR * shown;
 	const float3 glow = s_reticle_capture_glow.SampleLevel(smp_rtlinear, image_tc, 0).rgb * LENS_COLOR * shown;
 	core = float4(core.rgb + light * (1.0 - dirt), 1.0);
-	rmsdf_glow_source = float4(rmsdf_glow_source.rgb + glow * (1.0 - 0.5 * dirt), 1.0);
+	reticle_atlas_glow_source = float4(reticle_atlas_glow_source.rgb + glow * (1.0 - 0.5 * dirt), 1.0);
 }
 
 // The lens's dirt over this pixel, as the lens pass lays it over the image
-float scope_msdf_dirt(Scope S)
+float scope_reticle_dirt(Scope S)
 {
 	return saturate(s_dirt.Sample(smp_base, S.tc0).a * decoded_dirt_intensity());
 }
 #endif
 
-// MSDF reticle under PiP and Reference: the lens UV is the PiP image UV, so the published image projection
+// Atlas reticle under PiP and Reference: the lens UV is the PiP image UV, so the published image projection
 // gives the world angle of every lens pixel and the reticle stays registered with the image. dirt: the lens dirt
 // over the pixel, which dims the reticle's light and scatters part of it into the glow (emission pass).
-float4 scope_msdf_reticle(float3 background, float transmission, float dirt, ReticleAtlas atlas, float2 angle,
-	float2 jx, float2 jy)
+float4 scope_atlas_reticle(float3 background, float transmission, float dirt, ReticleAtlas atlas, ReticleView view)
 {
 	if (!atlas.valid)
 	{
-	#ifdef RETICLE_MSDF_EMISSION_PASS
+	#ifdef RETICLE_ATLAS_EMISSION_PASS
 		return 0;
 	#else
-		return reticle_msdf_control.y > 0.5 ? float4(1, 0, 1, 0.25) : 0;
+		return reticle_atlas_control.y > 0.5 ? float4(1, 0, 1, 0.25) : 0;
 	#endif
 	}
-	const float4 illumination = reticle_msdf_lighting(s_reticle, atlas, markswitch_color, markswitch_current.x);
-	const ReticleMarks marks = reticle_msdf_marks(s_reticle, smp_linear, atlas, angle, jx, jy, markswitch_current.x);
+	const float4 illumination = reticle_atlas_lighting(atlas, markswitch_color, markswitch_current.x);
+	const ReticleMarks marks = reticle_atlas_marks(s_reticle, atlas, view, markswitch_current.x);
 	// 3DSS 5.02 thermal battery: the reticle is part of the display, it dims with it and goes out when flat
 	float power = 1.0;
 	if (scope_battery_powered())
 		power = SCOPE_BATTERY_CHARGE <= THERMAL_CRITICAL_CHARGE ? 0.0 : thermal_power_signal(SCOPE_BATTERY_CHARGE);
 	const float shown = SETTING(SETTINGS, ST_SEE_THROUGH) ? 1.0 : zoomRotateFactor();
-	const float3 light = reticle_msdf_emission(atlas, marks, illumination) * (transmission * shown * power);
-	#ifdef RETICLE_MSDF_EMISSION_PASS
+	const float3 light = reticle_atlas_emission(atlas, marks, illumination) * (transmission * shown * power);
+	#ifdef RETICLE_ATLAS_EMISSION_PASS
 	// into the glow targets, or straight into the scene (the engine draws this pass there) without them
-	if (!reticle_msdf_emission_external())
-		return float4(reticle_msdf_inline(light * (1.0 - dirt)), 0);
-	rmsdf_glow_source = reticle_msdf_glow_out(atlas, light * (1.0 - 0.5 * dirt));
-	return reticle_msdf_core_out(light * (1.0 - dirt));
+	if (!reticle_atlas_emission_external())
+		return float4(reticle_atlas_inline(light * (1.0 - dirt)), 0);
+	reticle_atlas_glow_source = reticle_atlas_glow_out(atlas, light * (1.0 - 0.5 * dirt));
+	return reticle_atlas_core_out(light * (1.0 - dirt));
 	#else
 	// paint is lit by the light the lens gathers, the image behind the reticle
-	const float3 paint = reticle_msdf_paint(marks, dot(background, float3(0.299, 0.587, 0.114)));
+	const float3 paint = reticle_atlas_paint(marks, dot(background, float3(0.299, 0.587, 0.114)));
 	float alpha = 1.0 - (1.0 - marks.ink) * (1.0 - marks.paint);
 	float3 colour = alpha > 0.0 ? paint * marks.paint / alpha : 0;
 	alpha *= transmission * (power > 0.0 ? 1.0 : 0.0);
-	// an engine without the emission pass (reticle_msdf_control unset) gets the lit core here, without glow
-	if (reticle_msdf_control.w < 0.5)
+	// an engine without the emission pass (reticle_atlas_control unset) gets the lit core here, without glow
+	if (reticle_atlas_control.w < 0.5)
 	{
-		const float3 lit = reticle_msdf_inline(light);
+		const float3 lit = reticle_atlas_inline(light);
 		const float cover = max(alpha, max(lit.r, max(lit.g, lit.b)));
 		colour = cover > 0.0 ? (colour * alpha + lit) / cover : 0;
 		alpha = cover;
@@ -159,7 +158,7 @@ float4 scope_msdf_reticle(float3 background, float transmission, float dirt, Ret
 // Without a PiP image (fake PiP) the lens shows the main frame: the reticle angle comes from the frame
 // pixel each lens pixel shows (the SCOPECOORD_TO_TEXCOORD image mapping), the bore from the lens centre
 // at zero parallax.
-float2 scope_msdf_frame_angle(Scope S, ReticleAtlas atlas, out float2 frame_tc)
+float2 scope_reticle_frame_angle(Scope S, ReticleAtlas atlas, out float2 frame_tc)
 {
 	float image_project = 0.8 * zoomFactor() - 0.8;
 	float image_size = 0.2 * zoomFactor() + 0.8;
@@ -182,12 +181,12 @@ float2 scope_msdf_frame_angle(Scope S, ReticleAtlas atlas, out float2 frame_tc)
 		tc_dx.x * to_centre.y - tc_dx.y * to_centre.x) / (abs(det) > 1e-12 ? det : 1e-12);
 	const float2 bore_tc = (screen_tc + centre_px * output_res.zw - 0.5) / zoom + 0.5;
 	const float2 tan_half = float2(ogse_c_screen.z / max(ogse_c_screen.y, 0.01), ogse_c_screen.z);
-	return reticle_msdf_angle(atlas, reticle_msdf_frame_tangent(frame_tc, tan_half),
-		reticle_msdf_frame_tangent(bore_tc, tan_half));
+	return reticle_atlas_angle(atlas, reticle_atlas_frame_tangent(frame_tc, tan_half),
+		reticle_atlas_frame_tangent(bore_tc, tan_half));
 }
 
 // Where the 3DSS shaders sample a sight's reticle bitmap: reticle_tc (scaled by the focal plane) and the lens
-// coordinate. A bitmap reticle draws there; an MSDF atlas in 3dss scale mode follows reticle_tc.
+// coordinate. A bitmap reticle draws there; an atlas in 3dss scale mode follows them (reticle_atlas_view).
 void scope_legacy_reticle_tcs(Scope S, out float2 reticle_tc, out float2 reticle_lens_tc)
 {
 	float RETICLE_SIZE = s3ds_param_1.x;
@@ -227,6 +226,21 @@ void scope_legacy_reticle_tcs(Scope S, out float2 reticle_tc, out float2 reticle
 		RETICLE_PROJECT);
 }
 
+// The 1P59 dial's fraction of the zoom (reticle_dial_angle). True PiP minMag is a moving anchor: the fraction is
+// rebuilt in magnification space, then mapped to the measured 1p59 glyph angles.
+float scope_dial_fraction()
+{
+	float fraction = zoomPercent();
+	if (shader_scope_params.w < -1.5)
+	{
+		const float current_zoom = (curMag() - minMag()) * 0.4 + 1.0;
+		const float dial_max = maxMag() * current_zoom / curMag();
+		if (dial_max > 1.0)
+			fraction = dial_angle_fraction(3.0 + 7.0 * saturate((current_zoom - 1.0) / (dial_max - 1.0)));
+	}
+	return fraction;
+}
+
 // transmission: the lens's exit-pupil transmission, evaluated once by the caller (the compiler overflows its stack
 // when a shader evaluates it twice)
 float4 scope_bitmap_reticle(Scope S, float transmission) {
@@ -240,9 +254,6 @@ float4 scope_bitmap_reticle(Scope S, float transmission) {
 
 	float DIRT_INTENSITY = decoded_dirt_intensity();
 	float CHROMA_POWER = s3ds_param_3.w;
-
-	float current_zoom = (curMag()-minMag()) * 0.4 + 1.0;
-	float zoom_part = zoomPercent();
 
 	if (!SETTING(SETTINGS, ST_CHROMATISM) || svp_reticle_kill_chroma()) {
 		CHROMA_POWER = 0;
@@ -318,19 +329,7 @@ float4 scope_bitmap_reticle(Scope S, float transmission) {
 	{
 		mark_texture = mark_texture.r;
 		float finder = s_reticle.Sample(smp_base, SCOPECOORD_TO_TEXCOORD(clamp(reticle_lens_tc, 0, 1))).g;
-		float shift_3x = 0.053;
-		// True PiP minMag is a moving anchor. Rebuild the dial fraction in
-		// magnification space, then map it to the measured 1p59 glyph angles.
-		if (shader_scope_params.w < -1.5)
-		{
-			float dial_max = maxMag() * current_zoom / curMag();
-			if (dial_max > 1.0)
-			{
-				float x = saturate((current_zoom - 1.0) / (dial_max - 1.0));
-				zoom_part = dial_angle_fraction(3.0 + 7.0 * x);
-			}
-		}
-		float angle = -PI * (zoom_part + shift_3x) / (1 + shift_3x);
+		float angle = reticle_dial_angle(scope_dial_fraction());
 		float2 tc = reticle_lens_tc - 0.5;
 		tc = float2(tc.x * cos(angle) - tc.y * sin(angle), tc.x * sin(angle) + tc.y * cos(angle));
 		tc += 0.5;
@@ -435,66 +434,62 @@ float4 scope_bitmap_reticle(Scope S, float transmission) {
 
 float4 scope_custom_reticle(Scope S)
 {
-	// MSDF reticle angle, taken outside any branch so its screen derivatives stay defined. The Reference
+	// Atlas reticle angle, taken outside any branch so its screen derivatives stay defined. The Reference
 	// glyph pass rasterises in the UV chart and only keeps the inside coverage, it never draws marks.
 #ifndef SCOPE_REFERENCE_GLYPH_LAYER
-	const ReticleAtlas msdf_atlas = reticle_atlas_open(s_reticle);
-	float2 msdf_angle;
-	float2 msdf_image_tc = S.sfp; // true PiP: the eyepiece capture coordinate of the image pass (SCOPECOORD_TO_TEXCOORD)
+	const ReticleAtlas atlas = reticle_atlas_open(s_reticle);
+	float2 reticle_angle;
+	float2 reticle_image_tc = S.sfp; // true PiP: the eyepiece capture coordinate of the image pass (SCOPECOORD_TO_TEXCOORD)
 	if (shader_scope_params.w < -1.5 && svp_env.w > 0.5 && ddy(S.tc0.y) < 0.0)
-		msdf_image_tc.y = 1.0 - msdf_image_tc.y;
+		reticle_image_tc.y = 1.0 - reticle_image_tc.y;
 	if (svp_reticle_projection.x > 0.0)
 	{
-		float2 msdf_uv = S.tc0;
+		float2 reticle_uv = S.tc0;
 		if (shader_scope_params.w < -1.5 && svp_env.w > 0.5 && ddy(S.tc0.y) < 0.0)
-			msdf_uv.y = 1.0 - msdf_uv.y;
-		const float2 msdf_bore = 0.5 + (svp_physical_optics_active() && svp_barrel_alignment.z > 0.5
+			reticle_uv.y = 1.0 - reticle_uv.y;
+		const float2 reticle_bore = 0.5 + (svp_physical_optics_active() && svp_barrel_alignment.z > 0.5
 			? svp_barrel_alignment.xy : 0.0);
-		msdf_angle = reticle_msdf_angle(msdf_atlas,
-			reticle_msdf_projected_tangent(msdf_uv, svp_reticle_projection),
-			reticle_msdf_projected_tangent(msdf_bore, svp_reticle_projection));
+		reticle_angle = reticle_atlas_angle(atlas,
+			reticle_atlas_projected_tangent(reticle_uv, svp_reticle_projection),
+			reticle_atlas_projected_tangent(reticle_bore, svp_reticle_projection));
 	}
 	else
-		msdf_angle = scope_msdf_frame_angle(S, msdf_atlas, msdf_image_tc);
-	if (msdf_atlas.flags & RMSDF_FLAG_SFP)
-		msdf_angle *= max(curMag() / max(svp_optics.w, 1.0), 1.0) / msdf_atlas.calibrated_magnification;
-	float2 msdf_legacy_tc, msdf_legacy_lens_tc;
-	scope_legacy_reticle_tcs(S, msdf_legacy_tc, msdf_legacy_lens_tc);
-	if (reticle_msdf_legacy_scale(msdf_atlas))
-		msdf_angle = reticle_msdf_legacy_angle(msdf_atlas, msdf_legacy_tc);
-	const float2 msdf_jx = ddx(msdf_angle);
-	const float2 msdf_jy = ddy(msdf_angle);
+		reticle_angle = scope_reticle_frame_angle(S, atlas, reticle_image_tc);
+	float2 reticle_legacy_tc, reticle_legacy_lens_tc;
+	scope_legacy_reticle_tcs(S, reticle_legacy_tc, reticle_legacy_lens_tc);
+	const ReticleView reticle_view = reticle_atlas_view_dial(reticle_atlas_view(atlas, reticle_angle,
+		curMag() / max(svp_optics.w, 1.0), reticle_legacy_tc, reticle_legacy_lens_tc), reticle_dial_angle(scope_dial_fraction()));
 	// the lens's exit-pupil transmission, once: the reticle and the capture's light share it
-	float msdf_transmission = 1.0;
+	float reticle_transmission = 1.0;
 	#ifndef SCOPE_REFERENCE_MARK_ONLY
 	if (svp_physical_optics_active())
-		msdf_transmission = svp_exit_pupil_transmission(svp_scope_lens_tc(S.w_P));
+		reticle_transmission = svp_exit_pupil_transmission(svp_scope_lens_tc(S.w_P));
 	#endif
-#ifdef RETICLE_MSDF_EMISSION_PASS
-	// the glow only: the lens's MSDF reticle, and under PiP a reflex the capture shows, both under the PiP lens's
+#ifdef RETICLE_ATLAS_EMISSION_PASS
+	// the glow only: the lens's atlas reticle, and under PiP a reflex the capture shows, both under the PiP lens's
 	// dirt (the Reference image has dirt of its own)
-	float msdf_dirt = 0.0;
+	float reticle_dirt = 0.0;
 	#ifndef SCOPE_REFERENCE_MARK_ONLY
-	msdf_dirt = scope_msdf_dirt(S);
+	reticle_dirt = scope_reticle_dirt(S);
 	#endif
 	float4 result = 0;
-	if (msdf_atlas.recognised)
-		result = scope_msdf_reticle(0, msdf_transmission, msdf_dirt, msdf_atlas, msdf_angle, msdf_jx, msdf_jy);
+	if (atlas.recognised)
+		result = scope_atlas_reticle(0, reticle_transmission, reticle_dirt, atlas, reticle_view);
 	#ifndef SCOPE_REFERENCE_MARK_ONLY
-	scope_msdf_capture_light(S, msdf_transmission, msdf_dirt, result);
+	scope_reticle_capture_light(S, reticle_transmission, reticle_dirt, result);
 	#endif
-	if (!any(result != 0) && !any(rmsdf_glow_source != 0))
+	if (!any(result != 0) && !any(reticle_atlas_glow_source != 0))
 		discard;
 	return result;
 #else
 	float4 result;
-	if (msdf_atlas.recognised)
+	if (atlas.recognised)
 	{
-		const float3 msdf_background = scope_msdf_background(S, msdf_image_tc);
-		result = scope_msdf_reticle(msdf_background, msdf_transmission, 0.0, msdf_atlas, msdf_angle, msdf_jx, msdf_jy);
+		const float3 reticle_background = scope_reticle_background(S, reticle_image_tc);
+		result = scope_atlas_reticle(reticle_background, reticle_transmission, 0.0, atlas, reticle_view);
 	}
 	else
-		result = scope_bitmap_reticle(S, msdf_transmission);
+		result = scope_bitmap_reticle(S, reticle_transmission);
 	return result;
 #endif
 #else

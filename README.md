@@ -1,70 +1,95 @@
 # Bodycam GAMMA Patch
 
-The GAMMA-specific gamedata for the [Bodycam X-Ray engine](https://github.com/asuparabekon) (a Monolith fork that carries the PiP true picture-in-picture scopes). The engine and its core gamedata work on plain Anomaly. This mod adds everything that patches other G.A.M.M.A. mods.
+Compatibility shaders, scripts and reticles for the [Bodycam engine](https://github.com/asuparabekon/xray-monolith-bodycam)
+on G.A.M.M.A. and with 3D Shader Scopes (3DSS). The engine's own files run on plain Anomaly; the files
+that patch other G.A.M.M.A. mods are in this mod.
 
-**Required on G.A.M.M.A.** (and on any setup with 3D Shader Scopes). Without it, 3DSS scopes render through 3DSS's stock shaders, which lack the PiP hooks, and the physical scope glass is off.
+You need it on G.A.M.M.A. and on any setup with 3DSS. Without it, 3DSS scopes use 3DSS's own shaders,
+which have no PiP hooks, and the physical scope glass is off.
 
-Targets **3D Shader Scopes for GAMMA 5.02**. 3DSS 5.02's own files cover the reflex lens, scope back/zwrite, `mark_adjust.h` and the scope vertex shader, so this mod does not replace them. The reflex reticle blenders are replaced only to add the sampler MSDF reticles need. The 5.02 features work under PiP: transparent sights (ADS with both eyes open) keep their see-through housing around the PiP lens, NV generations and gain, fusion outlines (all four colours), the thermal battery and powered-off screen, the thermal reflex passthrough and the Mark Switch dot offset.
-
-## What it contains
-
-| Area | Files | Patches |
-| --- | --- | --- |
-| 3DSS reticles and lenses | `models_scope_reticle{,_precise}.{ps,s}`, `models_reflex_reticle{,_3db,_simple,_simple_3db}.ps`, `scope_3dss_common.h`, `scope_common.h`, `scope_custom_{image,lens,reticle,shadow}.h`, `scope_color_write.ps`, `mod_system_zzzz…_pip_3dss_contract.ltx` | 3D Shader Scopes for GAMMA 5.02, Authentic Reticle for 3DSS, ARC/Pizza when enabled |
-| SSS 23 depth of field and the physical scope glass material | `depth_of_field.ps`, `models_scope_glass*`, `scope_glass_pbr_material.h`, `mod_system_scope_glass.ltx`, `textures/scope_glass/*` | Screen Space Shaders 23, Enhanced Shaders (KennShade) |
-| NVG objective view | `night_vision.h` | Beef's NVG (Better Beef NVG PiP compat, plus the bodycam depth focus) |
-| HUD animation scripts | `actor_effects.script`, `lam2.script`, `z_beefs_nvgs.script` | GAMMA 3D PDA/headlamp animations, FDDA Redone, Beef's NVG, GAMMA script performance overrides (each is that file plus the bodycam HUD motion calls) |
-| Magnifier HUD ownership | `bodycam_magnifier_hud.script` | Releases 3DSS's global magnifier HUD override when its weapon is no longer active, including same-slot replacements. Keeps an open HUD editor and other override owners intact. |
-| Boomsticks particles | `particletgz.ps` | Boomsticks and Sharpsticks (adds the Reference scope particle hook) |
-| Core script mirrors | `callbacks_gameobject.script`, `_g_patches.script`, `options_*` and the other files listed in the Bodycam repo's `tools/release.py` `CORE_MIRRORS` | Exact copies of the Bodycam core files. A G.A.M.M.A. install keeps older Monolith copies loose in `Anomaly\gamedata`, which outrank the core `.db0`. |
-| MSDF reticles | `reticle_msdf.h`, `reticle_msdf_reflex.h`, `models_reflex_reticle*.s`, `textures/wpn/scope_reticles/cortex/ebr9/cortex.dds`, `textures/wpn/wpn_addon_scope_eotech_crosshair_dot.dds`, `z_3d_scopes_reticle_glow_mcm.script`, `ui_st_3d_scopes_reticle_glow.xml` | The EBR-9 MOA of the Razor (cortex) and the six Mark Switch marks of the 3DSS EOTech (eot, e0t2, exps3 and their magnifier combos) as self-describing distance-field atlases at the paths of the bitmaps they replace; the shaders recognise them by their header (see `docs/MSDF_RETICLES.md`). Their glow is the Bodycam engine's 3DSS reticle glow, in stock 3DSS and under PiP; its settings are the Reticle Glow tab of the 3D Shader Scopes MCM menu. `r__reticle_msdf 0` draws them from coverage alone for comparison |
-| PiP data for GAMMA weapons | `mod_pip_objective_offsets_gamma_patch.ltx`, `mod_pip_optic_physical_specs_gamma_patch.ltx` | PiP's authored objective offsets and optic mapping for the FM Garand scopes (DLTX into the core tables) |
-
-[PROVENANCE.md](PROVENANCE.md) lists every file with its upstream and whether it is identical or modified.
+Requires **3D Shader Scopes for GAMMA 5.02**. Its see-through sights, night vision generations and gain,
+fusion outlines, thermal battery and off screen, thermal reflex passthrough and Mark Switch dot offset all
+keep working under PiP.
 
 ## Install (Mod Organizer 2)
 
-1. Install the Bodycam engine release (`bin\` into `Anomaly\bin`, `db\mods\00_modded_exes_gamedata.db0` into `Anomaly\db\mods`).
+1. Install the Bodycam engine: `bin\` into `Anomaly\bin`, `db\mods\00_modded_exes_gamedata.db0` into
+   `Anomaly\db\mods`.
 2. Install this zip as a mod named **Bodycam GAMMA Patch**.
-3. Give it a **higher priority** than: 3DSS for GAMMA (5.02), Mark Switch, Authentic Reticle for 3DSS, (01) EFT 3DSS And PRS Module, Screen Space Shaders 23, Beef's NVG, Enhanced Shaders (KennShade), FDDA Redone, GAMMA 3D PDA and Headlamp Animations, Boomsticks and Sharpsticks, and GAMMA script performance overrides. In MO2, ensure this patch wins the file conflicts; left-pane position depends on the selected sort order.
-4. Disable the older "3DSS PiP Compat Patch" and "Better Beef NVG PiP Compat Patch" mods: this mod replaces both.
-5. Clear `appdata\shaders_cache` after installing or updating.
+3. Let it win file conflicts against: 3DSS for GAMMA 5.02, Mark Switch, Authentic Reticle for 3DSS,
+   (01) EFT 3DSS And PRS Module, Screen Space Shaders 23, Beef's NVG, Enhanced Shaders (KennShade),
+   FDDA Redone, GAMMA 3D PDA and Headlamp Animations, Boomsticks and Sharpsticks, and GAMMA script
+   performance overrides.
+4. Disable "3DSS PiP Compat Patch" and "Better Beef NVG PiP Compat Patch". This mod replaces both.
+5. Clear `appdata\shaders_cache`.
 
-Optional: "PiP MAS Pizza Compatibility" (by TheLostInPlace) works on top of this mod; its contract asks for `pip_3dss_compat_patch`, which this mod still provides. If you use "3DSS Lens Hider Hider", turn its lens hiding off: PiP draws on the lens it would hide.
+If you already have a mod called **GAMMA Patch** (the old name), replace it instead of enabling both.
 
-If updating an existing **GAMMA Patch** installation, replace or rename that mod rather than enabling both copies.
+"PiP MAS Pizza Compatibility" (TheLostInPlace) works on top of this mod. If you use "3DSS Lens Hider
+Hider", turn its lens hiding off: PiP draws on that lens.
+
+## Contents
+
+| Area | Files | Patches |
+| --- | --- | --- |
+| 3DSS lenses and reticles | `models_scope_reticle*`, `models_reflex_reticle*`, `scope_3dss_common.h`, `scope_common.h`, `scope_custom_*.h`, `scope_color_write.ps`, the `_pip_3dss_contract.ltx` | 3D Shader Scopes for GAMMA 5.02, Authentic Reticle for 3DSS, ARC and Pizza when enabled |
+| Depth of field and scope glass | `depth_of_field.ps`, `models_scope_glass*`, `scope_glass_pbr_material.h`, `mod_system_scope_glass.ltx`, `textures/scope_glass/` | Screen Space Shaders 23, Enhanced Shaders (KennShade) |
+| Night vision in the scope | `night_vision.h` | Beef's NVG |
+| HUD animation scripts | `actor_effects.script`, `lam2.script`, `z_beefs_nvgs.script` | GAMMA 3D PDA and headlamp animations, FDDA Redone, Beef's NVG, GAMMA script performance overrides |
+| Magnifier HUD | `bodycam_magnifier_hud.script` | Releases 3DSS's magnifier HUD override once its weapon is put away, without touching other owners |
+| Boomsticks particles | `particletgz.ps` | Boomsticks and Sharpsticks |
+| Core script copies | `callbacks_gameobject.script`, `_g_patches.script`, `options_*` and the rest of `CORE_MIRRORS` in the engine's `tools/release.py` | G.A.M.M.A. keeps older Monolith copies of these loose in `Anomaly\gamedata`, which win over the core package |
+| Vector reticles | `reticle_atlas.h`, `reticle_atlas_reflex.h`, `reticle_vector.h`, the reticle textures, `z_3d_scopes_reticle_glow_mcm.script`, `z_3d_scopes_reticle_editor.script`, `ui_st_3d_scopes_reticle_glow.xml` | See below |
+| PiP data for GAMMA weapons | `mod_pip_objective_offsets_gamma_patch.ltx`, `mod_pip_optic_physical_specs_gamma_patch.ltx` | Objective offsets and optic records for the FM Garand scopes |
+
+[PROVENANCE.md](PROVENANCE.md) lists every file with its upstream and whether it was changed.
+
+## Reticles
+
+These sights get vector reticles drawn from SVG in place of their bitmaps:
+
+- Razor (cortex): EBR-9 MOA
+- March (shorty and cortex): DR-1F, in MIL. The ranging scale grows with zoom; the crosshair and fibre dot keep their size.
+- 3DSS EOTech (eot, e0t2, exps3 and their magnifier combos): all six Mark Switch marks
+- 1P59: the magnification dial turns with the zoom
+- GIMP ACOG 2x: the Trijicon TA47 9.2 MOA triangle, lit by daylight through the fibre and by tritium at night
+
+Each `.dds` ships next to its `.svg` and `.reticle.ini`, at the path of the bitmap it replaces. They work in
+stock 3DSS and under PiP. The glow settings are on the Reticle Glow tab of the 3D Shader Scopes MCM menu.
+The Reticle Editor (ImGui overlay, Mods > Reticle Editor) changes a held sight's reticle live and saves it
+as your own copy in `appdata\reticles`; it can also load any SVG or grain image, and reset to the original.
+
+To draw your own, see [docs/RETICLE_ATLASES.md](docs/RETICLE_ATLASES.md) and the engine's
+`src/Layers/xrRender/reticle_vector/README.md`. The engine builds a reticle from its SVG when it loads the
+texture. For other engines, its command-line tool writes the `.dds`:
+`<engine>/tools/reticle_vector/svg_to_vector --all gamedata/textures gamedata/textures --check` rebuilds
+this mod's atlases.
+
+## Known issues
+
+- With the old MSDF reticles the EOTech/G33 sometimes lost its ring or showed coloured fragments.
+  Whether the vector reticles fix this is not yet checked.
+- The reticle glow has not been checked on HDR10.
 
 ## Build
 
-`python tools/package.py` writes `dist/Bodycam GAMMA Patch <version>.zip` (meta.ini, README.md, PROVENANCE.md and gamedata at the root, sorted with a fixed timestamp). `--stage DIR` also writes the mod folder into a new or empty DIR outside the checkout. The Bodycam repo's `tools/release.py` and `tools/deploy.py` call it through a sibling checkout (`..\xray-monolith-bodycam-gamma-compatibility-patch`).
+`python tools/package.py` writes `dist/Bodycam GAMMA Patch <version>.zip` with meta.ini, README.md,
+PROVENANCE.md and `gamedata/` at the root. `--stage DIR` also writes the mod folder into a new or empty
+DIR. The engine's `tools/release.py` and `tools/deploy.py` use this repo from a sibling checkout.
 
-## Reticle authoring
-
-[3DSS Reticle Studio](https://github.com/asuparabekon/3dss-reticle-studio) is the separate desktop editor. Open a layered SVG, edit named paint/illumination groups and Mark Switch states, then export a DDS. Only that exported texture is installed in the game.
-
-The [authoring guide](https://github.com/asuparabekon/3dss-reticle-studio/blob/main/AUTHORING.md) covers SVG preparation, calibration, materials, preview controls and export. The [runtime reference](docs/MSDF_RETICLES.md) explains how this patch reads the atlas and integrates it with 3DSS. Studio source and binaries are maintained in their own repository.
+Pushes to `main` build a `release-package` artifact in GitHub Actions without publishing. To release,
+bump the version in `meta.ini`, push, then push the matching tag (`v1.2.3`). The workflow checks the
+archive against the source, then publishes it with `SHA256SUMS.txt`. Existing releases are never
+overwritten.
 
 ## Credits
 
-- **3D Shader Scopes**: LVutner, party_50; 3DSS for GAMMA: Redotix99, Andtheherois, party50; MsPizza727.
-- **Mark Switch**: party50 and meowie. **Authentic Reticle for 3DSS**: Napolemon.
-- **PiP (true picture-in-picture scopes)** and the PiP 3DSS / Better Beef NVG / grass compatibility patches: TheLostInPlace (m22).
-- **Screen Space Shaders**: Ascii1457. **Enhanced Shaders**: KennShade. **Beef's NVG**: theRealBeef.
-- **FDDA Redone**: lizzardman. **Boomsticks and Sharpsticks**: Mich and team. **G.A.M.M.A.**: Grok and the GAMMA team.
+- 3D Shader Scopes: LVutner, party_50. 3DSS for GAMMA: Redotix99, Andtheherois, party50, MsPizza727.
+- Mark Switch: party50 and meowie. Authentic Reticle for 3DSS: Napolemon.
+- PiP and the PiP 3DSS, Better Beef NVG and grass patches: TheLostInPlace (m22).
+- Screen Space Shaders: Ascii1457. Enhanced Shaders: KennShade. Beef's NVG: theRealBeef.
+- FDDA Redone: lizzardman. Boomsticks and Sharpsticks: Mich and team. G.A.M.M.A.: Grok and the GAMMA team.
 - Bodycam integration: asuparabekon.
 
-All credit for the original shaders and scripts goes to their authors. This repository redistributes modified copies so they work with the Bodycam engine.
-
-## Compatibility notes
-
-MSDF rendering works with PiP disabled. Existing bitmap reticles retain their rendering path. The engine supplies the exposure-aware glow passes; this patch supplies compatible lens/reticle shaders and atlases. See [MSDF reticles](docs/MSDF_RETICLES.md) for material states and settings.
-
-An intermittent EOTech/G33 rendering issue has been observed: a missing ring with coloured fragments in the lens. Its cause remains unresolved. HDR10 glow has not received visual validation.
-
-## Automated builds and releases
-
-Pushes to `main` build and validate a downloadable `release-package` artifact in GitHub Actions. They do not publish a release. The workflow can also be run manually for a build.
-
-To publish, update `meta.ini`, push the source, then push a matching version tag such as `v1.2.3`. Tags must match the source version. The workflow builds the ZIP, checks its contents, uploads it with `SHA256SUMS.txt`, and publishes the release only after the build succeeds. Use a new version for each release; existing releases are not overwritten.
-
-The mod archive is checked against its source files and keeps gamedata/ at the root for MO2.
+The original shaders and scripts belong to their authors. This repository carries modified copies so they
+work with the Bodycam engine.

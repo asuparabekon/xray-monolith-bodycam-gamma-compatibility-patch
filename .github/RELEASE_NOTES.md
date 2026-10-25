@@ -1,16 +1,18 @@
 # Bodycam GAMMA Patch
 
-GAMMA compatibility package for the Bodycam engine, targeting 3D Shader Scopes for GAMMA 5.02 and Screen Space Shaders 23.
+G.A.M.M.A. compatibility for the Bodycam engine. Targets 3D Shader Scopes for GAMMA 5.02 and Screen Space
+Shaders 23.
 
-Download **the attached ZIP** and install it through MO2's **Install a new mod from an archive** command. The archive has `gamedata/` at its root. Install the matching Bodycam engine first, enable the patch, and let it win the conflicts listed in the README. Disable the older 3DSS PiP and Better Beef NVG PiP compatibility patches. Clear `Anomaly/appdata/shaders_cache` while the game is closed.
+Install the attached ZIP with MO2's **Install a new mod from an archive** (not GitHub's source archives).
+Install the matching Bodycam engine first, let this mod win the conflicts listed in the README, and disable
+the old 3DSS PiP and Better Beef NVG PiP compat patches. Clear `Anomaly/appdata/shaders_cache` with the
+game closed.
 
-Includes PiP lens/reticle integration, physical scope glass, NVG and HUD compatibility, magnifier HUD ownership correction, and MSDF reticles with Mark Switch and glow controls. MSDF rendering also works with PiP disabled.
+Contains the PiP lens and reticle shaders, the physical scope glass, night vision and HUD animation fixes,
+the magnifier HUD fix, and vector reticles with Mark Switch, glow settings and an in-game editor. The
+reticles also work with PiP off.
 
-Reticle authoring is available separately in [3DSS Reticle Studio](https://github.com/asuparabekon/3dss-reticle-studio). Studio is not included in this mod.
+Not yet checked: whether the vector reticles fix the missing ring and coloured fragments seen on the
+EOTech/G33 with the old MSDF reticles, and the reticle glow on HDR10.
 
-Known limits: intermittent EOTech/G33 visual corruption remains unresolved; HDR10 glow has not received visual validation. See the repository documentation for compatibility details.
-
-Use the attached mod ZIP, not GitHub's automatically generated source archives.
-
-
-SHA256SUMS.txt contains the checksum of the release archive.
+`SHA256SUMS.txt` has the archive checksum.

@@ -25,7 +25,7 @@ uniform float4 markswitch_color;
 
 #include "reticle_reflex_vertex.h"
 
-// where the bitmap is sampled before the Mark Switch cell is chosen; a 3dss-scaled MSDF reticle follows it
+// where the bitmap is sampled before the Mark Switch cell is chosen; a 3dss-scaled atlas reticle follows it
 float2 reflex_legacy_tc(vf I)
 {
 	float3x3 TBN = float3x3(I.T + OFFSET, I.B + OFFSET, I.N);
@@ -44,18 +44,18 @@ float4 reflex_bitmap(vf I, float2 dot_offset)
     return s_base.Sample(smp_rtlinear, parallax_tc + dot_offset);
 }
 
-#include "reticle_msdf_reflex.h"
+#include "reticle_atlas_reflex.h"
 
 ReflexReticleOut main(vf I)
 {
 	const float2 dot_offset = reticle_mark_offset(markswitch_color.a);
-	// an MSDF atlas describes itself; the bitmap path never sees one
-	const ReticleAtlas msdf_atlas = reticle_atlas_open(s_base);
-	const float2 msdf_legacy_tc = reflex_legacy_tc(I) + dot_offset;
-	const float3 msdf = reticle_msdf_reflex(s_base, smp_linear, msdf_atlas, I.P, I.T, I.B, I.N, I.tc0,
-		dot_offset, msdf_legacy_tc);
+	// a reticle atlas describes itself; the bitmap path never sees one
+	const ReticleAtlas atlas = reticle_atlas_open(s_base);
+	const float2 reticle_legacy_tc = reflex_legacy_tc(I) + dot_offset;
+	const float3 reticle_light = reticle_atlas_reflex(s_base, atlas, I.P, I.T, I.B, I.N, I.tc0,
+		dot_offset, reticle_legacy_tc);
 	float4 bitmap = 0;
-	if (!msdf_atlas.recognised)
+	if (!atlas.recognised)
 		bitmap = reflex_bitmap(I, dot_offset);
-	return reticle_msdf_reflex_out(msdf_atlas, bitmap, msdf);
+	return reticle_atlas_reflex_out(atlas, bitmap, reticle_light);
 }
