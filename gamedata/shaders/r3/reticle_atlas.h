@@ -1,21 +1,20 @@
 // Reticle atlases: the self-describing texture a 3DSS reticle is drawn from, at the path of the bitmap it
-// replaces. Atlas format 11 (vector reticles, layout in reticle_vector.h): settings, Mark Switch marks,
+// replaces. Atlas format 12 (vector reticles, layout in reticle_vector.h): settings, Mark Switch marks,
 // illumination and emission, shared by the stock 3DSS lens, PiP, Reference and reflex sights
 // (reticle_atlas_reflex.h). The only writer is the Bodycam engine's src/Layers/xrRender/reticle_vector (in game
-// from SVG, or its command-line tool). Older atlases (the MSDF formats 2-8 and vector formats 9-10) are recognised
+// from SVG, or its command-line tool). Older atlases (the MSDF formats 2-8 and vector formats 9-11) are recognised
 // and not drawn (magenta with r__reticle_msdf_debug). Evaluation only; every path composes the result its own way.
 #ifndef RETICLE_ATLAS_H
 #define RETICLE_ATLAS_H
 
-#define RATLAS_ROLE_INK 1
-#define RATLAS_ROLE_ILLUM 2
-#define RATLAS_ROLE_PAINT 3
-#define RATLAS_ROLE_GLOW 4 // paint that also lights up with the illumination
-#define RATLAS_ROLE_LIGHT 5 // light only, unseen while the illumination is off (a fibre dot)
+#define RATLAS_ROLE_ILLUM 1
+#define RATLAS_ROLE_PAINT 2
+#define RATLAS_ROLE_GLOW 3 // paint that also lights up with the illumination
+#define RATLAS_ROLE_LIGHT 4 // light only, unseen while the illumination is off (a fibre dot)
 #define RATLAS_FLAG_ILLUMINATES 1
 #define RATLAS_FLAG_PAINT 2
 #define RATLAS_FLAG_HOLO 4
-#define RATLAS_FLAG_FFP_PARTS 8  // parts that grow with the zoom (first focal plane)
+#define RATLAS_FLAG_FFP_PARTS 8  // parts in the sight's own focal plane
 #define RATLAS_FLAG_SFP_PARTS 16 // parts that keep their size (second focal plane)
 #define RATLAS_FLAG_DIAL_PARTS 32 // parts that keep their size and turn with the zoom (a magnification dial)
 #define RATLAS_DEFAULT_LUMINANCE 8.0
@@ -36,7 +35,7 @@ uniform float4 reticle_atlas_reflex_glow;
 struct ReticleAtlas
 {
 	bool recognised; // an atlas header is present: never treat the texture as a legacy bitmap
-	bool valid;      // a format 11 atlas that passed every check (an older atlas never is)
+	bool valid;      // a format 12 atlas that passed every check (an older atlas never is)
 	float2 dims;     // texels
 	uint piece_count;
 	uint curve_count;
@@ -77,10 +76,9 @@ struct ReticleView
 
 struct ReticleMarks
 {
-	float ink;        // etched coverage, opaque black (includes unlit illuminated elements)
 	float illum;      // coverage of the illuminated elements
 	float3 illum_rgb; // their light and the light-only shapes', colour times coverage (white with the sight's colours)
-	float paint;      // painted coverage
+	float paint;      // painted coverage (an illuminated element counts as black paint)
 	float3 paint_rgb; // painted albedo, coverage weighted
 	float3 glow_rgb;  // light of the paint that lights up, as illum_rgb
 };

@@ -5,7 +5,7 @@
     <path d="M 0.0000 0.0000 L 4.9067 9.2000 L -4.9067 9.2000 Z" fill="#ff0000" />
     <path d="M -0.9200 17.1733 L 0.9200 17.1733 L 0.9200 26.3733 L -0.9200 26.3733 Z" fill="#ff0000" />
   </g>
-  <g inkscape:groupmode="layer" inkscape:label="ink">
+  <g inkscape:groupmode="layer" inkscape:label="paint">
     <path d="M -0.9200 26.3733 L 0.9200 26.3733 L 0.9200 31.5867 L -0.9200 31.5867 Z" fill="#000000" />
   </g>
 </svg>

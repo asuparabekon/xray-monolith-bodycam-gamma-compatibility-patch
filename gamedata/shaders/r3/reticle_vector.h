@@ -1,12 +1,12 @@
-// Vector reticles: reticle atlas format 11 (RGBA8, one mip). The reticle is drawn from its SVG's filled shapes as
+// Vector reticles: reticle atlas format 12 (RGBA8, one mip). The reticle is drawn from its SVG's filled shapes as
 // quadratic curves: each pixel gets the exact area of each shape inside it, so edges are exact at any
 // magnification and lines and dots far below a pixel keep their true darkness. Parts in the drawing's "sfp" layer
 // keep their size when the sight zooms, parts in its "dial" layer keep their size and turn about the centre with
-// the zoom (ReticleView.dial_angle); the rest grows with it (reticle_atlas_view). Illumination and emission:
+// the zoom (ReticleView.dial_angle); the rest is in the sight's own focal plane (reticle_atlas_view). Illumination and emission:
 // reticle_atlas.h. Written by the Bodycam engine's src/Layers/xrRender/reticle_vector (its README: drawing rules).
 //
 // Header, row 0, bytes:
-//   0-7   'R','E','T','I','C','L','E', 11 (the format)
+//   0-7   'R','E','T','I','C','L','E', 12 (the format)
 //   8-11  log2 width, log2 height, unit (1 MOA, 2 mrad), flags (RATLAS_FLAG_*)
 //   12-15 u16 piece count, u16 curve count
 //   16-19 u16 grid list entries, mask log2 width, mask log2 height (0 = no mask)
@@ -20,7 +20,7 @@
 //     24-25 s8 ghost offset * 8, 26 fringe * 100, 27 flicker * 255, mask 28 depth * 255, 29-30 u16 size (units per
 //     repeat) * 16, 31 shift with the eye (units per mm) * 100, 32 grain changes per second * 16 (0 = still),
 //     33 fibre (lit core per sky luminance) * 32, 34-35 u16 tritium (lit core, scene luminance) * 256.
-//   The pieces, five texels each: role (RATLAS_ROLE_*: ink, illum, paint, glow, light), flags (bit 0 keeps its
+//   The pieces, five texels each: role (RATLAS_ROLE_*: illum, paint, glow, light), flags (bit 0 keeps its
 //     size, bit 1 turns as the dial (bit 0 set too), bits 4-7 the Mark Switch mark, 0 = every mark), r, g, b, 0, u16 group, u16 first curve, u16 curve
 //     count, s16 bounds min x, min y, max x, max y. A piece is a drawn shape cut to one grid cell, its contours oriented so the filled side is on the
 //     left; the pieces of a shape follow each other with one group number.
@@ -34,7 +34,7 @@
 #ifndef RETICLE_VECTOR_H
 #define RETICLE_VECTOR_H
 
-#define RVEC_VERSION 11
+#define RVEC_VERSION 12
 #define RVEC_SEGMENTS 4
 #define RVEC_GRID 32
 #define RVEC_PIECE_BASE RATLAS_RECORD_TEXELS // descriptor stream texel of the first piece, after the settings record
@@ -216,7 +216,7 @@ float rvec_piece_coverage(Texture2D t, ReticleAtlas a, uint i, float2 p, float2 
 	piece.group = s1.z | (s1.w << 8);
 	const uint mark = piece.flags >> 4, first = s2.x | (s2.y << 8), count = s2.z | (s2.w << 8);
 	const uint piece_plane = (piece.flags & 1) + ((piece.flags >> 1) & piece.flags & 1); // 0 ffp, 1 sfp, 2 dial
-	if (!((mark == 0 || mark == pattern) && piece_plane == plane && piece.role >= RATLAS_ROLE_INK
+	if (!((mark == 0 || mark == pattern) && piece_plane == plane && piece.role >= RATLAS_ROLE_ILLUM
 		&& piece.role <= RATLAS_ROLE_LIGHT && first + count <= a.curve_count))
 		return 0.0;
 	return rvec_shape_coverage(t, a, first, count, p, to_pixel);
@@ -236,9 +236,7 @@ void rvec_add_shape(ReticleAtlas a, RvecPiece piece, float coverage, float gamma
 	if (coverage <= 0.0)
 		return;
 	const float cov = pow(saturate(coverage), gamma);
-	if (piece.role == RATLAS_ROLE_INK)
-		m.ink = 1.0 - (1.0 - m.ink) * (1.0 - cov);
-	else if (piece.role == RATLAS_ROLE_ILLUM)
+	if (piece.role == RATLAS_ROLE_ILLUM)
 	{
 		m.illum = 1.0 - (1.0 - m.illum) * (1.0 - cov);
 		m.illum_rgb = 1.0 - (1.0 - m.illum_rgb) * (1.0 - cov * rvec_light(a, piece.colour));
@@ -254,7 +252,7 @@ void rvec_add_shape(ReticleAtlas a, RvecPiece piece, float coverage, float gamma
 	}
 }
 
-// The shapes of one plane (0 grows with the zoom, 1 keeps its size, 2 the dial) at reticle angle p, jx/jy = reticle
+// The shapes of one plane (0 the sight's own, 1 keeps its size, 2 the dial) at reticle angle p, jx/jy = reticle
 // angle per screen pixel. While the box fits in a grid cell only the pieces listed for the pixel's cell are tested;
 // a reticle so small that a pixel spans more than a cell tests every piece. Pieces of one drawn shape follow each
 // other and share a group number: their coverage adds up before the shape joins the marks.
@@ -335,8 +333,8 @@ ReticleMarks reticle_vector_marks(Texture2D t, ReticleAtlas a, ReticleView v, fl
 		const float2 jy = plane == 0 ? v.ffp_dy : (plane == 1 ? v.sfp_dy : mul(turn, v.sfp_dy));
 		rvec_marks_plane(t, a, p, jx, jy, pattern, plane, m);
 	}
-	// an illuminated element is etched too: black while it is not lit
-	m.ink = 1.0 - (1.0 - m.ink) * (1.0 - m.illum);
+	// an illuminated element is etched too: black paint under its light
+	m.paint = 1.0 - (1.0 - m.paint) * (1.0 - m.illum);
 	return m;
 }
 

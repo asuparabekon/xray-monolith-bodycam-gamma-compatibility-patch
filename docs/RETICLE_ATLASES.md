@@ -1,16 +1,16 @@
 # Reticle atlases
 
 Scope and holographic reticles in this mod are vector drawings, not bitmaps. Each texture holds the
-reticle's shapes as quadratic curves (atlas format 11), and the shader computes how much of each shape
+reticle's shapes as quadratic curves (atlas format 12), and the shader computes how much of each shape
 covers every pixel. Edges stay sharp at any zoom, and lines thinner than a pixel keep their real darkness.
 
-A reticle can mix parts that grow with the zoom (first focal plane) and parts that keep their size
-(second focal plane). Lit parts glow like emitted light, with a screen-space glow that follows the eye's
+A reticle follows its sight's focal plane, and a dual focal plane reticle can also have parts that always
+keep their size. Lit parts glow like emitted light, with a screen-space glow that follows the eye's
 exposure and stays out of the game's bloom. Painted parts are lit by the scene. An atlas is a few to a
 few hundred KB. The shaders and atlases are in this mod's `gamedata/`, each atlas next to its `.svg` and
 `.reticle.ini`. The glow itself is a 3DSS feature of the Bodycam engine.
 
-Older atlases (MSDF formats 2 to 8, vector formats 9 and 10) are recognised but not drawn. With
+Older atlases (MSDF formats 2 to 8, vector formats 9 to 11) are recognised but not drawn. With
 `r__reticle_msdf_debug 1` they show magenta, and the engine logs each one once. Rebuild them from their SVG.
 
 ## Binding by texture path
@@ -22,7 +22,9 @@ engines without the hooks listed below. No script or config is involved.
 
 ## Making one
 
-Draw the reticle as filled shapes in an SVG with named Inkscape layers (`ink`, `illum`, `paint`, `glow`,
+A step-by-step guide is in [RETICLE_AUTHORING.md](RETICLE_AUTHORING.md).
+
+Draw the reticle as filled shapes in an SVG with named Inkscape layers (`paint`, `illum`, `glow`,
 `light`, `mark N`, `sfp`, `dial`, `center`) and write its `.reticle.ini`. The supported SVG features, every setting
 and the build commands are in the Bodycam engine's `src/Layers/xrRender/reticle_vector/README.md`.
 Then either:
@@ -178,9 +180,8 @@ EOTech uses a laser-speckle mask with 1.8 MOA grains.
 The Mark Switch selection picks the pattern: shapes in a `mark N` (or `mark 1, 3`) layer show with those
 marks, everything else with every mark. Layers:
 
-- `ink`: etched black.
+- `paint`: keeps its fill as a surface lit by the scene; etched lines are black paint.
 - `illum`: etched, and lights up.
-- `paint`: keeps its fill as a surface lit by the scene.
 - `glow`: paint that also lights up.
 - `light`: only emits, unseen while the illumination is off (a fibre dot).
 
@@ -200,7 +201,7 @@ the Mark Switch colour, or white for a sight without one.
 | Where | What |
 | --- | --- |
 | `shaders/r3/reticle_atlas.h` | The settings record, the pixel's place per focal plane (`reticle_atlas_view`), illumination, emission, glow outputs, paint; recognises older atlases. Evaluation only. |
-| `shaders/r3/reticle_vector.h` | The format 11 layout, its checks, the per-pixel coverage of the curves per focal plane, the holographic mask. |
+| `shaders/r3/reticle_vector.h` | The format 12 layout, its checks, the per-pixel coverage of the curves per focal plane, the holographic mask. |
 | `models_scope_reticle(_precise).ps` | Stock 3DSS lens: angle from the frame pixel the lens shows (main camera FOV), marks in one slot under the tube shadow, the glow as outputs 2 and 3 with the reflex glow its image shows, or inline. |
 | `scope_custom_reticle.h` | PiP Classic and Reference: angle from the published PiP image projection (or the frame mapping under fake PiP); paint lit by the image the lens shows; in the emission pass, the capture's reflex light. |
 | `reticle_atlas_reflex.h`, `models_reflex_reticle*.ps` | Reflex and holographic sights: collimated angle from the viewpoint through the glass; holograms draw with their atlas's authored look (`ReticleHologram`). |

@@ -1051,11 +1051,10 @@ if (MARK_TYPE == RT_DFP_ALT)
 	float3 final_scope = lerp(back, final_scope_1.rgb, final_scope_1.a);
 	if (atlas.recognised)
 	{
-		// one fixed slot under the tube shadow for either focal plane; ink is black, paint reflects the scene
+		// one fixed slot under the tube shadow for either focal plane; paint reflects the scene
 		const float reticle_reach = true_pip ? eyebox_transmission : 1.0;
 		const float3 reticle_paint = reticle_atlas_paint(reticle_marks, dot(back, float3(0.299, 0.587, 0.114)));
 		final_scope = lerp(final_scope, reticle_paint, reticle_marks.paint * reticle_reach);
-		final_scope *= 1.0 - reticle_marks.ink * reticle_reach;
 		if (!atlas.valid && reticle_atlas_control.y > 0.5)
 			final_scope = lerp(final_scope, float3(1, 0, 1), 0.25);
 	}
@@ -1088,7 +1087,7 @@ if (MARK_TYPE == RT_DFP_ALT)
 			const float reach = true_pip ? eyebox_transmission : 1.0;
 			float cover = (1.0 - final_scope_1.a) * (1.0 - final_scope_2.a) * (1.0 - final_scope_3.a) * reach;
 			if (atlas.recognised)
-				cover *= (1.0 - reticle_marks.paint * reach) * (1.0 - reticle_marks.ink * reach);
+				cover *= 1.0 - reticle_marks.paint * reach;
 			reticle_image = s_reticle_image_emission.SampleLevel(smp_linear, scope_tc, 0).rgb * LENS_COLOR * cover;
 			reticle_image_glow = s_reticle_image_glow.SampleLevel(smp_linear, scope_tc, 0).rgb * LENS_COLOR * cover;
 		}

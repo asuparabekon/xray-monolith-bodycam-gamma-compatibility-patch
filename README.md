@@ -59,7 +59,8 @@ stock 3DSS and under PiP. The glow settings are on the Reticle Glow tab of the 3
 The Reticle Editor (ImGui overlay, Mods > Reticle Editor) changes a held sight's reticle live and saves it
 as your own copy in `appdata\reticles`; it can also load any SVG or grain image, and reset to the original.
 
-To draw your own, see [docs/RETICLE_ATLASES.md](docs/RETICLE_ATLASES.md) and the engine's
+To draw your own, follow [docs/RETICLE_AUTHORING.md](docs/RETICLE_AUTHORING.md). For how reticles work, see
+[docs/RETICLE_ATLASES.md](docs/RETICLE_ATLASES.md) and the engine's
 `src/Layers/xrRender/reticle_vector/README.md`. The engine builds a reticle from its SVG when it loads the
 texture. For other engines, its command-line tool writes the `.dds`:
 `<engine>/tools/reticle_vector/svg_to_vector --all gamedata/textures gamedata/textures --check` rebuilds

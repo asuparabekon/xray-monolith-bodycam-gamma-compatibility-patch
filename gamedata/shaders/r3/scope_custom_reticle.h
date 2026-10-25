@@ -140,8 +140,8 @@ float4 scope_atlas_reticle(float3 background, float transmission, float dirt, Re
 	#else
 	// paint is lit by the light the lens gathers, the image behind the reticle
 	const float3 paint = reticle_atlas_paint(marks, dot(background, float3(0.299, 0.587, 0.114)));
-	float alpha = 1.0 - (1.0 - marks.ink) * (1.0 - marks.paint);
-	float3 colour = alpha > 0.0 ? paint * marks.paint / alpha : 0;
+	float alpha = marks.paint;
+	float3 colour = paint;
 	alpha *= transmission * (power > 0.0 ? 1.0 : 0.0);
 	// an engine without the emission pass (reticle_atlas_control unset) gets the lit core here, without glow
 	if (reticle_atlas_control.w < 0.5)

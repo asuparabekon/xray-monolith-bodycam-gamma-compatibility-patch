@@ -2,7 +2,7 @@
 // angle is the direction from the viewpoint (the view's origin, also a PiP objective that sees the sight) through
 // the glass, measured against the glass normal, so it sits at infinity like the bitmap path; in 3dss scale mode it
 // follows the bitmap's own coordinate instead. A reflex sight does not zoom, so both focal planes sit at that
-// angle. Reflex output is light only (additive blend), no ink. While the engine holds the reticle glow targets at
+// angle. Reflex output is light only (additive blend), no paint. While the engine holds the reticle glow targets at
 // slots 2 and 3 (reticle_atlas_reflex_glow.x) the light goes there, out of bloom.
 //
 // Holographic sights draw with the look their atlas authors (ReticleAtlas.holo_*): softer and dimmer, the author's

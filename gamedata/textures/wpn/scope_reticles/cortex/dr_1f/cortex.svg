@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" viewBox="-175.7940 -175.7940 351.5880 351.5880">
   <title>March DR-1F, 1 unit = 1 MIL: the ranging scale and numerals grow with the zoom; the crosshair and the fibre dot keep their size (sizes at 1x). Line widths from March's drawing, layout from the 3DSS bitmap</title>
-  <g inkscape:groupmode="layer" inkscape:label="ink">
+  <g inkscape:groupmode="layer" inkscape:label="paint">
       <path d="M -1.5021 -5.0500 H 1.5021 V -4.9500 H -1.5021 Z" fill="#000000" />
       <path d="M -0.6438 -4.0500 H 0.6438 V -3.9500 H -0.6438 Z" fill="#000000" />
       <path d="M -0.6009 -3.0500 H 0.6009 V -2.9500 H -0.6009 Z" fill="#000000" />
@@ -89,7 +89,7 @@
       <path d="M 3.8412 40.6401 L 3.9270 40.5993 L 4.0653 40.4506 L 4.1147 40.3219 L 4.1179 39.8498 L 4.1094 39.8069 L 4.0772 39.7639 L 4.0745 39.7210 L 4.0343 39.6781 L 4.0224 39.6352 L 3.9700 39.5776 L 3.8841 39.5296 L 3.6695 39.5311 L 3.6266 39.5708 L 3.5770 39.5923 L 3.5623 39.6352 L 3.4847 39.7210 L 3.4766 39.7639 L 3.4469 39.8069 L 3.4349 39.8498 L 3.4335 39.9356 L 3.4068 39.9785 L 3.4007 40.0215 L 3.4042 40.1931 L 3.4335 40.2361 L 3.4422 40.3648 L 3.4766 40.4077 L 3.4822 40.4506 L 3.6266 40.5993 L 3.6695 40.6008 L 3.7124 40.6383 Z M 3.9060 40.4077 L 3.8412 40.4721 L 3.7124 40.4721 L 3.6481 40.4077 L 3.6427 40.3648 L 3.6052 40.3219 L 3.5896 40.1931 L 3.5622 40.1502 L 3.5622 40.0215 L 3.5875 39.9785 L 3.5964 39.9356 L 3.6050 39.8069 L 3.6785 39.7210 L 3.7124 39.6955 L 3.7554 39.6822 L 3.8412 39.6960 L 3.9486 39.8069 L 3.9685 40.0215 L 3.9914 40.0644 L 3.9914 40.1502 L 3.9602 40.1931 L 3.9485 40.3219 L 3.9192 40.3648 Z" fill="#000000" />
   </g>
   <g inkscape:groupmode="layer" inkscape:label="sfp">
-    <g inkscape:groupmode="layer" inkscape:label="ink">
+    <g inkscape:groupmode="layer" inkscape:label="paint">
       <path d="M -17.8541 -0.3500 H 17.8541 V 0.3500 H -17.8541 Z" fill="#000000" />
       <path d="M -0.3500 -175.7940 H 0.3500 V 0.0000 H -0.3500 Z" fill="#000000" />
       <path d="M -0.5000 0.0000 H 0.5000 V 18.1974 H -0.5000 Z" fill="#000000" />
