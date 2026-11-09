@@ -432,6 +432,23 @@ float4 scope_bitmap_reticle(Scope S, float transmission) {
 	return result;
 }
 
+// Without a PiP image the 3DSS eye box sets how much reticle light reaches the eye, the same term the shadow pass draws
+float scope_reticle_eyebox(Scope S)
+{
+	if (RETICLE_TYPE == RT_SCREEN || RETICLE_TYPE == RT_FLAT_SCREEN)
+		return 1.0;
+	const float EYE_RELIEF = s3ds_param_1.y;
+	const float EXIT_PUPIL = s3ds_param_1.z;
+	const float3x3 TBN = cotangent_frame(S.v_N + 0.0039, S.v_P + 0.0039, S.tc0.xy);
+	const float3 V_tangent = normalize(float3(dot(-S.v_P, TBN[0]), dot(-S.v_P, TBN[1]), dot(-S.v_P, TBN[2])));
+	const float pupil_size = max(EXIT_PUPIL * (SETTING(SETTINGS, ST_SEE_THROUGH) ? 1 : zoomRotateFactor()), 0.001);
+	const float2 pupil_tc = project(S.tc0, V_tangent.xy * svp_effective_mas(mas_scale()), -EYE_RELIEF, pupil_size);
+	float shadow = sample_shadow(pupil_tc, 0.15 + 0.02 * curMag() * 0.4).a;
+	if (!SETTING(SETTINGS, ST_PARALLAX_SHADOW))
+		shadow *= 1 - zoomRotateFactor();
+	return 1.0 - shadow;
+}
+
 float4 scope_custom_reticle(Scope S)
 {
 	// Atlas reticle angle, taken outside any branch so its screen derivatives stay defined. The Reference
@@ -464,6 +481,8 @@ float4 scope_custom_reticle(Scope S)
 	#ifndef SCOPE_REFERENCE_MARK_ONLY
 	if (svp_physical_optics_active())
 		reticle_transmission = svp_exit_pupil_transmission(svp_scope_lens_tc(S.w_P));
+	else if (atlas.recognised && shader_scope_params.w > -1.5)
+		reticle_transmission = scope_reticle_eyebox(S);
 	#endif
 #ifdef RETICLE_ATLAS_EMISSION_PASS
 	// the glow only: the lens's atlas reticle, and under PiP a reflex the capture shows, both under the PiP lens's
